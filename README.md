@@ -109,6 +109,30 @@ grounded-RAG call remains BLOCKED (no `LLM_API_KEY` available); deterministic
 grounded path verified live (`grounded=true` + `[S1]`-style sources,
 cross-course isolation, unsupported-question limitation).
 
+## Final handoff — real Anthropic wiring (key from local `.env`, never committed)
+
+- `LLM_PROVIDER=anthropic` + `LLM_API_KEY` (env-only) flow through the
+  existing abstraction on both paths: ai-service `AnthropicLlmClient`
+  (chat + summarize) and backend `AnthropicHttpProvider` (local fallback
+  path). Quiz drafts remain template-based by architecture (no LLM call;
+  instructor approval still required).
+- Live finding: the Anthropic account has **zero credit balance**
+  (`invalid_request_error`, HTTP 400 — key authenticates, billing refuses),
+  so end-to-end generation is BLOCKED on funding, not on code. Requests
+  provably reach `api.anthropic.com`; 4xx fails fast without retry.
+- Embeddings stay deterministic (`VECTOR(1536)` dim preserved): no
+  embedding credential exists, and an Anthropic key is deliberately NOT
+  reused for the Voyage endpoint (it caused a live Voyage 401 that broke
+  retrieval — fixed, with regression tests on both stacks).
+- Robustness fixes from live verification: set-but-empty `LLM_BASE_URL` /
+  `LLM_CHAT_MODEL` / provider/model names now fall back to defaults
+  (previously produced the relative URL `/v1/messages`).
+- Remote CI (GitHub Actions, run on push): backend + AI jobs green;
+  two runner-only failures fixed and re-pushed — frontend tests need Node 24
+  (jsdom30/undici8 require `worker_threads.markAsUncloneable`, absent on
+  Node 20), and compose static validation needs an empty `.env` present for
+  `env_file` resolution plus placeholders for interpolation.
+
 ## Layout
 
 | Path | Purpose |

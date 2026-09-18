@@ -31,9 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # NOTE: Node 24 is required for the frontend TEST runtime only:
+      # jsdom@30 → undici@8 needs worker_threads.markAsUncloneable, which
+      # does not exist on Node 20 (remote CI failure 2026-09-18). Product
+      # code still supports >=20 (see engines + backend job on Node 20).
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
@@ -78,7 +82,12 @@ jobs:
           JWT_ACCESS_SECRET: ci-access-secret-min-16-chars
           JWT_REFRESH_SECRET: ci-refresh-secret-min-16-chars
       - name: Validate compose config (static only, throwaway placeholders)
+        # .env.ci feeds ${VAR:?} interpolation; an EMPTY .env satisfies the
+        # services' `env_file: ../.env` references (absent on runners — secrets
+        # are never committed). Both files are removed afterwards. Safe because
+        # a tracked .env can never exist (gitignored + never committed).
         run: |
           printf 'POSTGRES_PASSWORD=ci-placeholder\nREDIS_PASSWORD=ci-placeholder\nMINIO_ROOT_USER=ci-placeholder\nMINIO_ROOT_PASSWORD=ci-placeholder\n' > .env.ci
+          touch .env
           docker compose --env-file .env.ci -f infra/docker-compose.yml config --quiet
-          rm .env.ci
+          rm -f .env.ci .env
