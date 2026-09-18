@@ -21,6 +21,19 @@ export function getEmbeddingDim(): number {
   return Number.isInteger(raw) && raw > 0 ? raw : EMBEDDING_DIM;
 }
 
+/** Server-side Gemini key. STRICT: never the Anthropic key. */
+export function getGeminiEmbeddingKey(): string {
+  return process.env.GEMINI_API_KEY?.trim() || '';
+}
+
+export function getGeminiEmbeddingModel(): string {
+  return process.env.EMBEDDING_MODEL?.trim() || 'gemini-embedding-001';
+}
+
+export function isGeminiEmbeddingModel(model = process.env.EMBEDDING_MODEL?.trim() || ''): boolean {
+  return model.toLowerCase().startsWith('gemini');
+}
+
 function getConfigSafe(): { EMBEDDING_DIM?: string } | undefined {
   try {
     return getConfig() as unknown as { EMBEDDING_DIM?: string };
@@ -71,7 +84,7 @@ class AnthropicEmbeddingStub implements EmbeddingProvider {
 
 /**
  * Phase 7 real embedding provider (Voyage-compatible HTTP API).
- * - Key only from environment (EMBEDDING_API_KEY or LLM_API_KEY fallback).
+ * - Key only from environment (EMBEDDING_API_KEY, explicit only).
  * - Configurable model via EMBEDDING_MODEL (default voyage-3-lite).
  * - Timeout + one safe retry (embeddings are idempotent/safe to retry).
  * - Dimension validated before returning; mismatches throw (callers must not
@@ -130,9 +143,71 @@ class VoyageEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+/**
+ * Free-tier runtime embedding provider (Google Gemini, gemini-embedding-001).
+ * Same EmbeddingProvider interface as the Voyage path. Requests
+ * outputDimensionality = configured dim (1536 — pgvector column unchanged)
+ * and validates every vector before returning.
+ */
+class GeminiEmbeddingProvider implements EmbeddingProvider {
+  name = 'gemini';
+  dim = getEmbeddingDim();
+  async embed(texts: string[]): Promise<number[][]> {
+    const apiKey = getGeminiEmbeddingKey();
+    const model = getGeminiEmbeddingModel();
+    if (!apiKey) {
+      logger.warn('GEMINI_API_KEY unset — using deterministic fallback (tests/dev only)');
+      return texts.map((t) => deterministicEmbedding(t, this.dim));
+    }
+    const expectedDim = this.dim;
+    const timeoutMs = Number(process.env.EMBEDDING_TIMEOUT_MS ?? 30000);
+    const out: number[][] = [];
+    for (const text of texts) {
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:embedContent`,
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+              body: JSON.stringify({
+                model: `models/${model}`,
+                content: { parts: [{ text }] },
+                outputDimensionality: expectedDim,
+              }),
+              signal: controller.signal,
+            },
+          );
+          if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`Embedding provider error: ${res.status} ${errText.slice(0, 200)}`);
+          }
+          const body = (await res.json()) as { embedding?: { values?: number[] } };
+          const vec = (body.embedding?.values ?? []).map(Number);
+          validateEmbeddingDim(vec, expectedDim);
+          out.push(vec);
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          logger.warn({ err: err instanceof Error ? err.message : String(err), attempt }, 'embedding provider attempt failed');
+          if (attempt === 0) continue;
+          throw err instanceof Error ? err : new Error(String(err));
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      if (lastError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    }
+    return out;
+  }
+}
+
 /** Validate vector dimension before pgvector insert (PRD: 1536). */
-export function validateEmbeddingDim(vec: number[], expectedDim = getEmbeddingDim()): void {
-  if (!Array.isArray(vec) || vec.length !== expectedDim) {
+export function validateEmbeddingDim(vec: number[], expectedDim = getEmbeddingDim()): void {  if (!Array.isArray(vec) || vec.length !== expectedDim) {
     throw new Error(`Embedding dimension mismatch: got ${Array.isArray(vec) ? vec.length : 'invalid'}, expected ${expectedDim}`);
   }
   if (!vec.every((v) => Number.isFinite(v))) {
@@ -142,13 +217,15 @@ export function validateEmbeddingDim(vec: number[], expectedDim = getEmbeddingDi
 
 export function getEmbeddingProvider(): EmbeddingProvider {
   if (overrideProvider) return overrideProvider;
-  // Live-verification fix: Voyage HTTP only with an explicit embedding key
-  // (see above). An LLM-only deployment keeps deterministic retrieval.
-  const apiKey = process.env.EMBEDDING_API_KEY ?? '';
-  if (apiKey && (process.env.EMBEDDING_MODEL || '').length > 0) return new VoyageEmbeddingProvider();
-  // When a key is present but no explicit model, still prefer the real HTTP
-  // path with defaults (production-safe); tests set no key and get the stub.
-  if (apiKey && process.env.NODE_ENV === 'production') return new VoyageEmbeddingProvider();
+  // Explicit routing (free-tier runtime = Gemini):
+  // - model names gemini-* → Gemini provider (falls back internally w/o key)
+  // - explicit Voyage credential → Voyage provider (compat)
+  // - Gemini key present → Gemini provider
+  // - otherwise deterministic stub (tests / LLM-only deployments)
+  if (isGeminiEmbeddingModel()) return new GeminiEmbeddingProvider();
+  const voyageKey = process.env.EMBEDDING_API_KEY ?? '';
+  if (voyageKey) return new VoyageEmbeddingProvider();
+  if (getGeminiEmbeddingKey()) return new GeminiEmbeddingProvider();
   return new AnthropicEmbeddingStub();
 }
 

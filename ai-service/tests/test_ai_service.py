@@ -225,3 +225,98 @@ def test_llm_key_is_not_reused_as_embedding_key(monkeypatch):
     assert s.embedding_api_key == ""
     client = AnthropicEmbeddingClient(s.embedding_dim)
     assert client.embed(["hello world"]) == [deterministic_embedding("hello world", s.embedding_dim)]
+
+
+def test_gemini_provider_routing(monkeypatch):
+    """Free-tier runtime: provider/model names select the Gemini clients."""
+    from app.core.config import reset_settings
+    from app.core.llm import GeminiLlmClient, get_llm_client, set_llm_client
+    from app.rag.embeddings import GeminiEmbeddingClient, get_embedding_client, set_embedding_client
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("EMBEDDING_MODEL", "gemini-embedding-001")
+    reset_settings()
+    set_llm_client(None)
+    set_embedding_client(None)
+    try:
+        assert isinstance(get_llm_client(), GeminiLlmClient)
+        assert get_llm_client().name == "gemini"
+        assert isinstance(get_embedding_client(), GeminiEmbeddingClient)
+        assert get_embedding_client().name == "gemini"
+    finally:
+        reset_settings()
+
+
+def test_gemini_embedding_sends_1536_and_parses(monkeypatch):
+    """Stubbed HTTP: outputDimensionality=1536 requested, 1536 parsed."""
+    import json
+    import urllib.request
+
+    from app.rag.embeddings import GeminiEmbeddingClient
+
+    sent: dict = {}
+
+    class _FakeRes:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def read(self):
+            return json.dumps(self._payload).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _fake_urlopen(req, timeout=None):
+        sent["url"] = req.full_url
+        sent["body"] = json.loads(req.data.decode())
+        sent["headers"] = dict(req.header_items())
+        return _FakeRes({"embedding": {"values": [0.01] * 1536}})
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("EMBEDDING_MODEL", "gemini-embedding-001")
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    client = GeminiEmbeddingClient(1536)
+    vectors = client.embed(["hello world"])
+    assert len(vectors) == 1
+    assert len(vectors[0]) == 1536
+    assert ":embedContent" in sent["url"]
+    assert "gemini-embedding-001" in sent["url"]
+    assert sent["body"]["outputDimensionality"] == 1536
+    header_names = [k.lower() for k in sent["headers"]]
+    assert "x-goog-api-key" in header_names
+    assert "x-api-key" not in header_names
+
+
+def test_gemini_llm_uses_generate_content(monkeypatch):
+    """Stubbed HTTP: chat hits :generateContent and parses candidates."""
+    import json
+    import urllib.request
+
+    from app.core.llm import GeminiLlmClient
+
+    sent: dict = {}
+
+    class _FakeRes:
+        def read(self):
+            return json.dumps({"candidates": [{"content": {"parts": [{"text": "stubbed"}]}}]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _fake_urlopen(req, timeout=None):
+        sent["url"] = req.full_url
+        sent["body"] = json.loads(req.data.decode())
+        return _FakeRes()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    out = GeminiLlmClient().chat("sys", "hi", 64)
+    assert out == "stubbed"
+    assert ":generateContent" in sent["url"]
+    assert "anthropic" not in sent["url"]

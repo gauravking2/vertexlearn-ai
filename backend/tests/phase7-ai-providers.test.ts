@@ -16,6 +16,7 @@ afterEach(() => {
   delete process.env.LLM_BASE_URL;
   delete process.env.LLM_CHAT_MODEL;
   delete process.env.LLM_PROVIDER;
+  delete process.env.GEMINI_API_KEY;
   jest.restoreAllMocks();
 });
 
@@ -158,5 +159,78 @@ describe('Phase 7 real embedding provider wiring (stub HTTP, no paid calls)', ()
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0].text.toLowerCase()).toContain('photosynthesis');
     setEmbeddingProviderForTests(undefined);
+  });
+});
+
+describe('FINAL Gemini free-tier providers (stub HTTP, no live calls)', () => {
+  test('LLM_PROVIDER=gemini selects Gemini and calls :generateContent (no Anthropic)', async () => {
+    const { getLlmProvider } = await import('../src/ai/llm');
+    process.env.LLM_PROVIDER = 'gemini';
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    process.env.LLM_CHAT_MODEL = 'gemini-2.5-flash';
+    const seen: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = [];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation((async (url: unknown, init: unknown) => {
+      const headers = ((init as { headers?: Record<string, string> }).headers ?? {}) as Record<string, string>;
+      seen.push({ url: String(url), headers, body: JSON.parse(String((init as { body?: string }).body ?? '{}')) });
+      return {
+        ok: true,
+        json: async () => ({ candidates: [{ content: { parts: [{ text: 'stubbed gemini answer' }] } }] }),
+        text: async () => '',
+      };
+    }) as typeof fetch);
+    try {
+      const provider = getLlmProvider();
+      expect(provider.name).toBe('gemini');
+      const out = await provider.chat({ system: 'sys', user: 'hello' });
+      expect(out).toBe('stubbed gemini answer');
+      expect(seen).toHaveLength(1);
+      expect(seen[0].url).toContain(':generateContent');
+      expect(seen[0].url).toContain('gemini-2.5-flash');
+      expect(seen[0].url).not.toContain('anthropic');
+      expect(seen[0].headers['x-goog-api-key']).toBe('test-gemini-key');
+      expect(seen[0].headers).not.toHaveProperty('x-api-key');
+    } finally {
+      fetchSpy.mockRestore();
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+
+  test('gemini-embedding-001 requests 1536 dims and validates them', async () => {
+    process.env.EMBEDDING_MODEL = 'gemini-embedding-001';
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    delete process.env.EMBEDDING_API_KEY;
+    const seen: { url: string; body: Record<string, unknown> }[] = [];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation((async (url: unknown, init: unknown) => {
+      seen.push({ url: String(url), body: JSON.parse(String((init as { body?: string }).body ?? '{}')) });
+      return {
+        ok: true,
+        json: async () => ({ embedding: { values: new Array(1536).fill(0.01) } }),
+        text: async () => '',
+      };
+    }) as typeof fetch);
+    try {
+      const provider = getEmbeddingProvider();
+      expect(provider.name).toBe('gemini');
+      const [vec] = await provider.embed(['hello world']);
+      expect(vec).toHaveLength(1536);
+      expect(seen).toHaveLength(1);
+      expect(seen[0].url).toContain(':embedContent');
+      expect((seen[0].body as { outputDimensionality?: number }).outputDimensionality).toBe(1536);
+      expect((seen[0].body as { model?: string }).model).toContain('gemini-embedding-001');
+    } finally {
+      fetchSpy.mockRestore();
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+
+  test('Voyage routing preserved when explicitly configured', async () => {
+    process.env.EMBEDDING_MODEL = 'voyage-3-lite';
+    process.env.EMBEDDING_API_KEY = 'test-voyage-key';
+    delete process.env.GEMINI_API_KEY;
+    try {
+      expect(getEmbeddingProvider().name).toBe('voyage');
+    } finally {
+      delete process.env.EMBEDDING_API_KEY;
+    }
   });
 });

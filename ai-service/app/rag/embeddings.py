@@ -47,7 +47,7 @@ class MockEmbeddingClient:
 class AnthropicEmbeddingClient:
     """Real embedding provider (Voyage-compatible HTTP) with safe fallback.
 
-    - Key only from environment (EMBEDDING_API_KEY / LLM_API_KEY fallback).
+    - Key only from environment (EMBEDDING_API_KEY, explicit only).
     - Configurable model via EMBEDDING_MODEL (default voyage-3-lite).
     - Timeout + one safe retry (embeddings are idempotent).
     - Dimension validated before returning; mismatches raise (callers must
@@ -129,10 +129,98 @@ def set_embedding_client(client: EmbeddingClient | None) -> None:
 def get_embedding_client() -> EmbeddingClient:
     if _override is not None:
         return _override
-    dim = get_settings().embedding_dim or 1536
-    if get_settings().llm_provider.lower() == "mock":
+    settings = get_settings()
+    dim = settings.embedding_dim or 1536
+    if (settings.llm_provider or "").lower() == "mock":
         return MockEmbeddingClient(dim)
+    # Explicit routing (free-tier runtime = Gemini):
+    # - model names gemini-* → Gemini provider (falls back internally w/o key)
+    # - explicit Voyage credential → Voyage provider (compat)
+    # - Gemini key present → Gemini provider
+    # - otherwise deterministic stub (tests / LLM-only deployments)
+    if ((settings.embedding_model or "").strip().lower().startswith("gemini")):
+        return GeminiEmbeddingClient(dim)
+    if (settings.embedding_api_key or "").strip():
+        return AnthropicEmbeddingClient(dim)
+    if (settings.gemini_api_key or "").strip():
+        return GeminiEmbeddingClient(dim)
     return AnthropicEmbeddingClient(dim)
+
+
+GEMINI_EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent"
+
+
+def _gemini_embedding_model(settings) -> str:
+    return (settings.embedding_model or "").strip() or "gemini-embedding-001"
+
+
+class GeminiEmbeddingClient:
+    """Free-tier runtime embeddings (gemini-embedding-001, 1536 dims).
+
+    Same interface as the Voyage path: requests outputDimensionality equal to
+    the configured dim (pgvector column stays VECTOR(1536)) and validates
+    every vector. Key is GEMINI_API_KEY server-side only.
+    """
+
+    name = "gemini"
+
+    def __init__(self, dim: int = 1536):
+        self.dim = dim
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        import json
+        import time
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        from app.core.config import get_settings as _settings
+
+        settings = _settings()
+        api_key = (settings.gemini_api_key or "").strip()
+        if not api_key:
+            logger.warning("GEMINI_API_KEY unset — deterministic fallback (tests/dev only)")
+            return [deterministic_embedding(t, self.dim) for t in texts]
+        model = _gemini_embedding_model(settings)
+        expected = self.dim or settings.embedding_dim or 1536
+        url = GEMINI_EMBED_URL.format(model=urllib.parse.quote(model, safe=""))
+        out: list[list[float]] = []
+        for text in texts:
+            last_error: Exception | None = None
+            for attempt in range(2):
+                started = time.monotonic()
+                try:
+                    payload = {
+                        "model": f"models/{model}",
+                        "content": {"parts": [{"text": text}]},
+                        "outputDimensionality": expected,
+                    }
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(payload).encode(),
+                        headers={"content-type": "application/json", "x-goog-api-key": api_key},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as res:
+                        body = json.loads(res.read().decode())
+                    latency_ms = int((time.monotonic() - started) * 1000)
+                    vec = [(v) for v in ((body.get("embedding") or {}).get("values") or [])]
+                    validate_dim([float(v) for v in vec], expected)
+                    logger.info("embeddings completed provider=gemini count=1 latency_ms=%d", latency_ms)
+                    out.append([float(v) for v in vec])
+                    last_error = None
+                    break
+                except urllib.error.HTTPError as exc:
+                    logger.warning("embedding provider http error status=%s attempt=%d", exc.code, attempt)
+                    last_error = Exception(f"Embedding provider error: {exc.code}")
+                    continue
+                except Exception as exc:
+                    logger.warning("embedding provider failed attempt=%d err=%s", attempt, type(exc).__name__)
+                    last_error = exc if isinstance(exc, Exception) else Exception(str(exc))
+                    continue
+            if last_error is not None:
+                raise last_error
+        return out
 
 
 def cosine(a: list[float], b: list[float]) -> float:

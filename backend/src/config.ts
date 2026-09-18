@@ -35,6 +35,7 @@ const envSchema = z.object({
   LLM_CHAT_MODEL: z.string().default('claude-3-5-sonnet-latest'),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
+  GEMINI_API_KEY: z.string().default(''),
   EMBEDDING_MODEL: z.string().default(''),
   EMBEDDING_API_KEY: z.string().default(''),
   EMBEDDING_BASE_URL: z.string().default(''),

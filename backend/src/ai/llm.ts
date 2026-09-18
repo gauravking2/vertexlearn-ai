@@ -23,6 +23,18 @@ export function getLlmProviderName(): string {
   return (process.env.LLM_PROVIDER ?? 'anthropic').toLowerCase();
 }
 
+/** Server-side Gemini key. STRICT: never falls back to the Anthropic key. */
+export function getGeminiApiKey(): string {
+  return process.env.GEMINI_API_KEY?.trim() || '';
+}
+
+export function getGeminiChatModel(): string {
+  // Default is the Google-recommended Flash model: gemini-2.5-flash is
+  // retired for new API users (provider 404 names gemini-3.6-flash as the
+  // replacement). Explicit LLM_CHAT_MODEL always wins.
+  return process.env.LLM_CHAT_MODEL?.trim() || 'gemini-3.6-flash';
+}
+
 export function getLlmChatModel(): string {
   // Blank counts as unset (live-verification regression fix: an empty
   // LLM_CHAT_MODEL must not be sent to the provider).
@@ -109,7 +121,79 @@ class AnthropicHttpProvider implements LlmProvider {
 export function getLlmProvider(): LlmProvider {
   if (overrideLlm) return overrideLlm;
   if (getLlmProviderName() === 'mock') return new MockLlmProvider();
+  if (getLlmProviderName() === 'gemini') return new GeminiHttpProvider();
   return new AnthropicHttpProvider();
+}
+
+/**
+ * Free-tier runtime provider (Google Gemini). Same LlmProvider interface,
+ * same timeout/retry/logging discipline as the Anthropic path. Key is
+ * server-side only (GEMINI_API_KEY); never the Anthropic key.
+ */
+class GeminiHttpProvider implements LlmProvider {
+  name = 'gemini';
+  async chat(input: ChatCompletionInput): Promise<string> {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      logger.warn('GEMINI_API_KEY unset — using mock LLM output (tests/dev only)');
+      return new MockLlmProvider().chat(input);
+    }
+    const model = getGeminiChatModel();
+    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const started = Date.now();
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: input.system }] },
+              contents: [{ role: 'user', parts: [{ text: input.user }] }],
+              generationConfig: { maxOutputTokens: input.maxTokens ?? 1024 },
+            }),
+            signal: controller.signal,
+          },
+        );
+        const latencyMs = Date.now() - started;
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
+            logger.warn({ status: res.status, latencyMs, attempt }, 'LLM provider transient error, retrying');
+            lastError = new Error(`LLM provider error: ${res.status}`);
+            continue;
+          }
+          throw new Error(`LLM provider error: ${res.status} ${text.slice(0, 200)}`);
+        }
+        const body = (await res.json()) as {
+          candidates?: { content?: { parts?: { text?: string }[] } }[];
+        };
+        const text = (body.candidates ?? [])
+          .flatMap((c) => c.content?.parts ?? [])
+          .map((p) => p.text ?? '')
+          .join('\n')
+          .trim();
+        logger.info({ provider: 'gemini', model, latencyMs }, 'llm chat completed');
+        return text || 'The provider returned an empty response.';
+      } catch (err) {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if ((isAbort || (err instanceof Error && /fetch failed|network/i.test(err.message))) && attempt < maxRetries) {
+          logger.warn({ attempt, timeout: isAbort }, 'LLM request failed transiently, retrying');
+          lastError = err;
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('LLM provider failed');
+  }
 }
 
 export interface AiServiceChatClient {

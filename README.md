@@ -90,10 +90,11 @@ curl http://localhost:8000/health && curl http://localhost:3000/
 Required secret categories (names only — values live in `.env`, never
 committed): `POSTGRES_PASSWORD` (+`DATABASE_URL`), `REDIS_PASSWORD`
 (+`REDIS_URL`), `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`, `MINIO_ROOT_USER`/
-`MINIO_ROOT_PASSWORD` (+`STORAGE_ACCESS_KEY/SECRET_KEY`), `LLM_API_KEY`
-(+`LLM_PROVIDER/BASE_URL/CHAT_MODEL`), `EMBEDDING_API_KEY/MODEL/BASE_URL`,
-`AI_SERVICE_TOKEN`, `EMAIL_*`/`SENDGRID_API_KEY`, demo `DEMO_*` (never seed
-production). Frontend image carries only public `VITE_API_URL`/
+`MINIO_ROOT_PASSWORD` (+`STORAGE_ACCESS_KEY/SECRET_KEY`), `GEMINI_API_KEY`
+(runtime free-tier key; `LLM_PROVIDER`/`LLM_CHAT_MODEL`/`EMBEDDING_MODEL`
+select provider + models — legacy Anthropic `LLM_API_KEY` slot kept for
+compat but unused at runtime), `AI_SERVICE_TOKEN`, `EMAIL_*`/
+`SENDGRID_API_KEY`, demo `DEMO_*` (never seed production). Frontend image carries only public `VITE_API_URL`/
 `VITE_APP_NAME`/`VITE_DEFAULT_LOCALE` (verified: zero secret strings in
 `dist/` bundle). Migrations are all `IF NOT EXISTS` (verified) — safe to
 re-run; never run destructive DB operations. Local `.env` ships dev-only
@@ -109,21 +110,31 @@ grounded-RAG call remains BLOCKED (no `LLM_API_KEY` available); deterministic
 grounded path verified live (`grounded=true` + `[S1]`-style sources,
 cross-course isolation, unsupported-question limitation).
 
-## Final handoff — real Anthropic wiring (key from local `.env`, never committed)
+## Final handoff — Gemini Free Tier runtime (key from local `.env`, never committed)
 
-- `LLM_PROVIDER=anthropic` + `LLM_API_KEY` (env-only) flow through the
-  existing abstraction on both paths: ai-service `AnthropicLlmClient`
-  (chat + summarize) and backend `AnthropicHttpProvider` (local fallback
-  path). Quiz drafts remain template-based by architecture (no LLM call;
-  instructor approval still required).
-- Live finding: the Anthropic account has **zero credit balance**
-  (`invalid_request_error`, HTTP 400 — key authenticates, billing refuses),
-  so end-to-end generation is BLOCKED on funding, not on code. Requests
-  provably reach `api.anthropic.com`; 4xx fails fast without retry.
-- Embeddings stay deterministic (`VECTOR(1536)` dim preserved): no
-  embedding credential exists, and an Anthropic key is deliberately NOT
-  reused for the Voyage endpoint (it caused a live Voyage 401 that broke
+This deployment does NOT use Anthropic or Voyage for live traffic (the
+Anthropic account has $0 balance; no Voyage credential exists). The runtime
+provider is Google Gemini Free Tier, integrated into the existing provider
+abstraction on both stacks (Anthropic/Voyage code paths kept for compat):
+
+- `LLM_PROVIDER=gemini`, chat model `gemini-3.6-flash` (configured via
+  `LLM_CHAT_MODEL`; `gemini-2.5-flash` is retired for new API users — the
+  provider 404 names `gemini-3.6-flash` as the replacement), key strictly
+  from `GEMINI_API_KEY` (server-side only). Quiz drafts remain template-based
+  by architecture (no LLM call; instructor approval still required).
+- Embeddings: `gemini-embedding-001` with `outputDimensionality=1536`
+  (pgvector column stays `VECTOR(1536)` — no migration). An Anthropic key is
+  deliberately NOT reused for embeddings (live Voyage 401 that broke
   retrieval — fixed, with regression tests on both stacks).
+- Live verification (free tier, minimal calls): real embeddings indexed and
+  `vector_dims()`-proven 1536 in pgvector; grounded chat `grounded=true`
+  with valid `[S1]` citations (~600-char genuine answers); cross-course
+  isolation holds (zero foreign cites); unsupported questions get explicit
+  refusal scope statements; real summaries; quiz draft flow live.
+  Dense-embedding note: unrelated queries score ~0.46 (vs ~0.0 for the old
+  token-hash), so the numeric gate (0.12, unchanged) passes and the refusal
+  comes from the LLM following the grounded prompt — observed working twice
+  with slightly different phrasing, zero fabricated facts.
 - Robustness fixes from live verification: set-but-empty `LLM_BASE_URL` /
   `LLM_CHAT_MODEL` / provider/model names now fall back to defaults
   (previously produced the relative URL `/v1/messages`).
@@ -221,7 +232,7 @@ See `docs/architecture.md` for rationale.
 | frontend | `npm run typecheck` | `tsc --noEmit` |
 | frontend | `npm run build` | `tsc && vite build` → `frontend/dist/` |
 | frontend | `npx vitest run` | Vitest (jsdom) — 9 files / 47 tests in Phase 7 (incl. theme/i18n/a11y) |
-| ai-service | `pytest` | Pytest with mocked LLM/embeddings (17 tests; no provider key, no live calls) |
+| ai-service | `pytest` | Pytest with mocked LLM/embeddings (22 tests; no provider key, no live calls) |
 | root | `docker compose -f infra/docker-compose.yml up --build` | full local stack |
 
 Never commit `.env`. Only `.env.example` (names, no values) is tracked.
@@ -241,9 +252,9 @@ AI service uses `AI_SERVICE_URL` + `x-ai-service-token`. With no
 (same course-isolation guarantees), so tests need no provider key.
 
 Chunking: sentence-aware 800-char windows with 200-char overlap, max 200
-chunks (see `docs/architecture.md`). Embeddings: 1536-dim (Anthropic
-intended; deterministic token-hash fallback in tests/dev, mock LLM in
-tests — no live paid calls).
+chunks (see `docs/architecture.md`). Embeddings: 1536-dim (Gemini
+`gemini-embedding-001` at runtime; deterministic token-hash fallback in
+tests/dev, mock LLM in tests — no live provider calls in CI).
 
 ## Frontend
 
@@ -317,17 +328,15 @@ local-development implementation; production HLS/CDN remains out of scope.
   `aiRouter`), global 100/min backstop; Redis fixed-window counters with
   memory fallback; `RateLimit-*` + `Retry-After` headers; 429
   `RATE_LIMITED`. Tests cover auth/AI/authed limits + reset.
-- **AI providers**: Anthropic chat over HTTPS with env key/model/base URL,
-  timeout (`LLM_TIMEOUT_MS`) + retry (transient 429/5xx only), latency
-  logs, clear 4xx errors; Voyage-compatible embeddings
-  (`EMBEDDING_MODEL/API_KEY/BASE_URL`, default `voyage-3-lite`) with
+- **AI providers**: Gemini Free Tier at runtime (chat `gemini-3.6-flash`,
+  embeddings `gemini-embedding-001` @1536) over HTTPS with env-only keys,
+  timeout + retry (transient 429/5xx only), latency logs, clear 4xx errors;
   **dimension validation before any pgvector insert** (PRD 1536);
-  no-key → deterministic fallback (tests/dev only). Tests stay mocked —
-  no paid calls in CI (`tests/phase7-ai-providers.test.ts` uses a local
-  stub HTTP server). Real-provider live check requires keys and is
-  documented as BLOCKED; the deterministic grounded path (ingest →
-  pgvector → course-filtered retrieval → grounded answer + `[S1]` cites +
-  isolation) is unit-verified.
+  no-key → deterministic fallback (tests/dev only). Anthropic + Voyage paths
+  kept for compat but unused live. Tests stay mocked — no live provider calls
+  in CI (stub HTTP servers). Live Gemini verification: embeddings
+  `vector_dims()`-proven 1536 in pgvector; grounded chat with valid cites;
+  isolation + refusal behavior verified; see "Final handoff" above.
 - **Leaderboard**: `GET /api/v1/gamification/leaderboard` (public streak +
   badge aggregates, no PII; Redis-cached 60s; TTL-based refresh rather
   than per-touch invalidation).

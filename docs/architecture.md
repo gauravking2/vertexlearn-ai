@@ -129,11 +129,13 @@
   never need a live provider.
 - RAG pipeline: lecture transcript → sentence-aware chunking (800 chars,
   200 overlap, max 200 chunks; long sentences hard-sliced with overlap
-  carryover) → embedding (1536-dim; Anthropic intended, deterministic
-  token-hash fallback in tests/dev) → `document_chunks` (per PRD:
+  carryover) → embedding (1536-dim; Gemini `gemini-embedding-001` at runtime,
+  deterministic token-hash fallback in tests/dev) → `document_chunks` (per PRD:
   `id/course_id/lecture_id/chunk_text/embedding/created_at`, `VECTOR(1536)`,
   IVFFLAT `vector_cosine_ops` index, `lists=100`) → course-filtered retrieval
   → grounded prompt → LLM answer + `[S1..Sn]` citations → store both messages.
+  Runtime LLM is Gemini (`gemini-3.6-flash`; Anthropic path kept for compat,
+  unused live — the 2.5-flash ID is retired for new API users).
 - Course isolation (mandatory, server-side): every retrieval query carries
   `WHERE course_id = $1`; AI-service `retrieve_course_chunks` drops any row
   with a mismatched `course_id` as defense in depth and asserts no foreign
@@ -313,14 +315,17 @@ Production deployment, payment gateway, HLS/CDN. Leaderboard remains unbuilt.
   (20/min/user via `aiRouter.use`), global `express-rate-limit` 100/min
   backstop; Redis fixed-window with memory fallback; standard headers +
   429 `RATE_LIMITED`. Bypassed in Jest unless `RATE_LIMIT_ENFORCE=1`.
-- **AI providers**: backend `AnthropicHttpProvider` (timeout + retry on
-  transient 429/5xx, latency logs) and `VoyageEmbeddingProvider`
-  (Voyage-compatible `/v1/embeddings`, dim validation via
-  `validateEmbeddingDim`); `ingestTranscript` validates every vector before
-  insert. AI service mirrors this (`AnthropicLlmClient` retry/latency,
-  `AnthropicEmbeddingClient` Voyage HTTP + `validate_dim`), plus request-ID
-  generation/propagation, `LOG_LEVEL` honoring, and service identity in logs.
-  Provider keys only from env; tests inject mocks or stub HTTP servers.
+- **AI providers**: runtime is Gemini Free Tier on both stacks —
+  backend `GeminiHttpProvider` (`:generateContent`) and
+  `GeminiEmbeddingProvider` (`:embedContent` + `outputDimensionality=1536`),
+  each with timeout + retry on transient 429/5xx, latency logs, and strict
+  `GEMINI_API_KEY`-only auth (the Anthropic key is never reused for
+  embeddings); `ingestTranscript` validates every vector before insert. AI
+  service mirrors this (`GeminiLlmClient`, `GeminiEmbeddingClient` +
+  `validate_dim`), plus request-ID generation/propagation, `LOG_LEVEL`
+  honoring, and service identity in logs. Anthropic/Voyage paths are kept
+  for compat but unused live. Provider keys only from env; tests inject
+  mocks or stub HTTP servers (no live calls in CI).
 - **Observability**: pino redaction list (passwords, tokens, keys, secrets);
   request logs carry `service/requestId/method/path/status/durationMs`;
   errors carry request context; `/health` + `/ready` aliases.
@@ -359,3 +364,17 @@ analytics, voice tutor, SSO/SAML, production CDN/HLS, deployment.
   (db+redis); ai-service `/health` (provider name), `/ready`. All verified
   live post-deploy, plus a 71-check live API smoke suite, 100-concurrency
   load probe (max p95 108ms), and 7 Edge Playwright specs.
+
+## Final runtime — Gemini Free Tier (no paid usage)
+
+- `LLM_PROVIDER=gemini`, chat `gemini-3.6-flash` via `LLM_CHAT_MODEL`;
+  embeddings `gemini-embedding-001` via `EMBEDDING_MODEL` at 1536 dims
+  (`VECTOR(1536)` unchanged, no migration). `gemini-2.5-flash` was retired
+  for new API users (provider 404 names `gemini-3.6-flash`), so it is the
+  configured model; code defaults match. This substitution exists solely to
+  avoid paid API usage — Anthropic is not used live.
+- Live proof: embeddings `vector_dims()`-verified 1536 in pgvector;
+  grounded answers with valid cites; isolation + refusal behavior verified;
+  dense-embedding note — unrelated queries score ~0.46 (vs ~0.0 token-hash),
+  so the unchanged 0.12 gate passes and refusals come from the LLM following
+  the grounded prompt (observed, zero fabricated facts).

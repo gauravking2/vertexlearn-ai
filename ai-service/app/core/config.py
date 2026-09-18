@@ -30,6 +30,8 @@ class Settings:
     llm_chat_model: str = field(default_factory=lambda: _str("LLM_CHAT_MODEL", "claude-3-5-sonnet-latest"))
     llm_timeout_s: int = field(default_factory=lambda: _int("LLM_TIMEOUT_S", 30))
     llm_max_retries: int = field(default_factory=lambda: _int("LLM_MAX_RETRIES", 1))
+    # Free-tier runtime key. STRICT: never falls back to the Anthropic key.
+    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     embedding_model: str = field(default_factory=lambda: _str("EMBEDDING_MODEL", "voyage-3-lite"))
     # NOTE: no LLM_API_KEY fallback here (live-verification fix). An Anthropic
     # key is not valid for the Voyage embeddings endpoint; falling back to it

@@ -1,8 +1,9 @@
-"""LLM client abstraction. Anthropic is the intended provider; tests inject a mock."""
+"""LLM client abstraction. Free-tier runtime is Gemini; Anthropic kept for compat."""
 
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
@@ -14,11 +15,19 @@ logger = get_logger("ai-llm")
 
 MODES = ("beginner", "intermediate", "advanced")
 
+GEMINI_GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
 
 class LlmClient(Protocol):
     name: str
 
     def chat(self, system: str, user: str, max_tokens: int = 1024) -> str: ...
+
+
+def _gemini_model(settings) -> str:
+    # gemini-2.5-flash is retired for new API users (provider 404 names
+    # gemini-3.6-flash as the replacement). Explicit LLM_CHAT_MODEL wins.
+    return (settings.llm_chat_model or "").strip() or "gemini-3.6-flash"
 
 
 @dataclass
@@ -100,9 +109,78 @@ def set_llm_client(client: LlmClient | None) -> None:
 def get_llm_client() -> LlmClient:
     if _override is not None:
         return _override
-    if get_settings().llm_provider.lower() == "mock":
+    provider = (get_settings().llm_provider or "").lower()
+    if provider == "mock":
         return MockLlmClient()
+    if provider == "gemini":
+        return GeminiLlmClient()
     return AnthropicLlmClient()
+
+
+@dataclass
+class GeminiLlmClient:
+    """Free-tier runtime provider (Google Gemini). Same interface/discipline."""
+
+    name: str = "gemini"
+
+    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+        import time
+        import urllib.parse
+
+        settings = get_settings()
+        api_key = (settings.gemini_api_key or "").strip()
+        if not api_key:
+            logger.warning("GEMINI_API_KEY unset — mock output (tests/dev only)")
+            return MockLlmClient().chat(system, user, max_tokens)
+        model = _gemini_model(settings)
+        payload = {
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
+        timeout = max(1, settings.llm_timeout_s)
+        max_retries = min(max(0, settings.llm_max_retries), 5)
+        last_error: Exception | None = None
+        url = GEMINI_GENERATE_URL.format(model=urllib.parse.quote(model, safe=""))
+        for attempt in range(max_retries + 1):
+            started = time.monotonic()
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode(),
+                    headers={"content-type": "application/json", "x-goog-api-key": api_key},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as res:
+                    body = json.loads(res.read().decode())
+                latency_ms = int((time.monotonic() - started) * 1000)
+                parts: list[str] = []
+                for cand in body.get("candidates", []):
+                    for part in ((cand.get("content") or {}).get("parts") or []):
+                        if isinstance(part.get("text"), str):
+                            parts.append(part["text"])
+                logger.info("llm chat completed provider=gemini model=%s latency_ms=%d", model, latency_ms)
+                return "\n".join(parts).strip() or "The provider returned an empty response."
+            except urllib.error.HTTPError as exc:
+                latency_ms = int((time.monotonic() - started) * 1000)
+                detail = ""
+                try:
+                    detail = exc.read().decode()[:200]
+                except Exception:
+                    detail = ""
+                logger.warning("llm provider http error status=%s latency_ms=%d attempt=%d", exc.code, latency_ms, attempt)
+                if (exc.code == 429 or (exc.code is not None and exc.code >= 500)) and attempt < max_retries:
+                    last_error = Exception(f"LLM provider error: {exc.code} {detail}")
+                    continue
+                raise Exception(f"LLM provider error: {exc.code} {detail}") from exc
+            except Exception as exc:  # timeout / network
+                latency_ms = int((time.monotonic() - started) * 1000)
+                logger.warning("llm request failed attempt=%d latency_ms=%d err=%s", attempt, latency_ms, type(exc).__name__)
+                last_error = exc if isinstance(exc, Exception) else Exception(str(exc))
+                if attempt < max_retries:
+                    continue
+                raise
+        raise last_error or Exception("LLM provider failed")
 
 
 def grounded_system_prompt(mode: str) -> str:
