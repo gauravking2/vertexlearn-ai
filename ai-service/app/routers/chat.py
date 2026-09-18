@@ -1,10 +1,11 @@
 """Grounded chat answering over course-scoped chunks (no global search)."""
 
+import re
 import time
 
 from fastapi import APIRouter, Header
 
-from app.core.errors import forbidden
+from app.core.errors import ApiError, forbidden
 from app.core.llm import get_llm_client, grounded_system_prompt
 from app.core.logging import get_logger
 from app.models.schemas import ChatAnswerRequest, ChatAnswerResponse, EmbedRequest, EmbedResponse, InternalChatRequest, Source
@@ -21,6 +22,27 @@ logger = get_logger("ai-chat")
 def _check_token(token: str | None, expected: str) -> None:
     if expected and token != expected:
         raise forbidden("Invalid AI service token")
+
+
+def _llm_provider_api_error(exc: Exception) -> ApiError:
+    """Map an LLM provider failure to a coarse, safe category.
+
+    Never leaks provider bodies, headers, URLs, or key material — the backend
+    only receives the status/code and shows its own user-safe message.
+    """
+    text = str(exc)
+    match = re.search(r"LLM provider error: (\d{3})", text)
+    status = int(match.group(1)) if match else None
+    lowered = text.lower()
+    if status == 429 or "rate limit" in lowered:
+        return ApiError(429, "RATE_LIMITED", "AI Tutor is temporarily rate-limited.")
+    if status in (401, 403) or "api key" in lowered or "unauthorized" in lowered or "not configured" in lowered:
+        return ApiError(503, "AI_NOT_CONFIGURED", "AI Tutor configuration is invalid.")
+    if status == 400 or "invalid model" in lowered or "unsupported parameter" in lowered:
+        return ApiError(400, "AI_BAD_REQUEST", "The AI Tutor request could not be processed.")
+    if "timed out" in lowered or "timeout" in lowered:
+        return ApiError(504, "AI_TIMEOUT", "AI Tutor took too long to respond.")
+    return ApiError(503, "PROVIDER_UNAVAILABLE", "AI Tutor is temporarily unavailable.")
 
 
 @router.post("/v1/chat/answer", response_model=ChatAnswerResponse)
@@ -57,7 +79,7 @@ async def chat_answer(body: ChatAnswerRequest, x_ai_service_token: str | None = 
         answer = llm.chat(grounded_system_prompt(body.mode), f"Question: {body.question}\n\n<context>\n{context}\n</context>")
     except Exception as exc:
         logger.error("llm chat failed course_id=%s err=%s", body.course_id, type(exc).__name__)
-        raise
+        raise _llm_provider_api_error(exc) from exc
     latency_ms = int((time.monotonic() - started) * 1000)
     logger.info("chat answered course_id=%s grounded=true sources=%d latency_ms=%d", body.course_id, len(sources), latency_ms)
     return ChatAnswerResponse(answer=answer, grounded=True, sources=sources, mode=body.mode)
@@ -79,5 +101,9 @@ async def internal_chat(body: InternalChatRequest, x_ai_service_token: str | Non
 
     _check_token(x_ai_service_token, get_settings().ai_service_token)
     llm = get_llm_client()
-    answer = llm.chat(body.system, body.user, body.maxTokens)
+    try:
+        answer = llm.chat(body.system, body.user, body.maxTokens)
+    except Exception as exc:
+        logger.error("internal llm chat failed err=%s", type(exc).__name__)
+        raise _llm_provider_api_error(exc) from exc
     return {"answer": answer, "grounded": True}

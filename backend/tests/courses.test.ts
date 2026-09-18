@@ -61,9 +61,14 @@ describe('courses foundation', () => {
       .post('/api/v1/courses')
       .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Unique Zephyr Course Name', description: 'searchable' });
-    const res = await request(app).get('/api/v1/courses?q=Zephyr');
+    // Search as the owning instructor: pending courses are visible to their
+    // instructor (lifecycle management) but hidden from the public catalog.
+    const res = await request(app).get('/api/v1/courses?q=Zephyr').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+    const anon = await request(app).get('/api/v1/courses?q=Zephyr');
+    expect(anon.status).toBe(200);
+    expect(anon.body.data.length).toBe(0);
   });
 
   test('course detail is public and includes modules', async () => {

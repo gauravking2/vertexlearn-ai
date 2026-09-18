@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useCourses } from '@/hooks/useCourses';
 import { Card } from '@/components/common/Card';
-import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
@@ -10,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { BookOpen, Search } from 'lucide-react';
 import { CourseFilters } from '@/types';
 import { categoryCover, categoryInitial, displayPercent, safePercent } from '@/utils/model';
+import { SkeletonCards } from '@/components/common/Skeleton';
 
 // Display labels map 1:1 to backend category values (exact match server-side).
 const CATEGORIES = ['Programming', 'Design', 'Business', 'Data Science', 'Marketing'];
@@ -75,7 +75,11 @@ export const CourseCatalog = () => {
   };
 
   if (isLoading) {
-    return <LoadingSpinner text="Loading courses..." />;
+    return (
+      <div className="space-y-6">
+        <SkeletonCards count={6} />
+      </div>
+    );
   }
 
   return (
@@ -205,12 +209,13 @@ export const CourseCatalog = () => {
                 <Card key={id} hover className="overflow-hidden !p-0">
                   <Link to={`/courses/${id}`} aria-label={`Open ${course.title}`}>
                     <div
-                      className="h-36 flex items-end p-4"
+                      className="h-36 flex items-end p-4 relative"
                       style={{ background: categoryCover(course.category) }}
                       role="img"
                       aria-label={`${course.category || 'Course'} cover`}
                     >
-                      <span className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center text-2xl font-serif text-white border border-white/20">
+                      <div className="absolute inset-0 opacity-30" aria-hidden="true" style={{ background: 'radial-gradient(240px 100px at 85% 10%, rgba(255,255,255,0.35), transparent)' }} />
+                      <span className="relative w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center text-2xl font-serif text-white border border-white/20">
                         {categoryInitial(course.title)}
                       </span>
                     </div>
@@ -226,10 +231,10 @@ export const CourseCatalog = () => {
                         {course.description || 'No description yet.'}
                       </p>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-[#5C635D]">
+                        <span className="text-[#5C635D] dark:text-[#b9beb4]">
                           {ratingCount > 0 ? `★ ${rating.toFixed(1)} (${ratingCount})` : 'No ratings yet'}
                         </span>
-                        <span className="text-[#5C635D]">{course.enrollmentCount || 0} enrolled</span>
+                        <span className="text-[#5C635D] dark:text-[#b9beb4]">{course.enrollmentCount || 0} enrolled</span>
                       </div>
                       {typeof course.progress === 'number' && (
                         <div className="mt-3">

@@ -32,6 +32,29 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   }
 }
 
+/**
+ * Optional auth: attaches req.user when a valid Bearer token is present,
+ * otherwise continues anonymously (req.user stays undefined). Used by
+ * endpoints whose visibility depends on the caller (catalog):
+ * invalid tokens still 401 at authenticate-style strictness only where
+ * required — here a bad token is treated as anonymous on purpose so a stale
+ * token can never hide the public catalog.
+ */
+export function authenticateOptional(req: Request, _res: Response, next: NextFunction): void {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    next();
+    return;
+  }
+  try {
+    const payload = verifyAccessToken(header.slice('Bearer '.length));
+    req.user = { id: payload.sub, email: payload.email, roles: payload.roles };
+  } catch {
+    // Stale/invalid token → anonymous visibility. Never an error here.
+  }
+  next();
+}
+
 export function authorize(...allowed: RoleName[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const user = req.user;

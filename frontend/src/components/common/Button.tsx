@@ -26,7 +26,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const baseStyles = 'inline-flex items-center justify-center gap-2 font-medium transition-all rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#C4612F] focus:ring-2 focus:ring-offset-2 focus:ring-[#C4612F] disabled:opacity-50 disabled:cursor-not-allowed dark:focus-visible:ring-offset-[#12140f] dark:focus:ring-offset-[#12140f]';
+    const baseStyles = 'inline-flex items-center justify-center gap-2 font-medium transition-all rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#C4612F] focus:ring-2 focus:ring-offset-2 focus:ring-[#C4612F] disabled:opacity-50 disabled:cursor-not-allowed vl-press dark:focus-visible:ring-offset-[#12140f] dark:focus:ring-offset-[#12140f]';
 
     // Contrast (measured, WCAG AA ≥4.5): white on #A94E22 = 5.53;
     // hover #8A3E1C = 7.54. Dark mode: #14110C on #D3723F = 5.60.

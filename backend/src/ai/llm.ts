@@ -20,7 +20,29 @@ export function setLlmProviderForTests(provider: LlmProvider | undefined): void 
 }
 
 export function getLlmProviderName(): string {
-  return (process.env.LLM_PROVIDER ?? 'anthropic').toLowerCase();
+  // AI_TUTOR_PROVIDER is the AI-tutor-specific override (e.g. mistral); the
+  // generic LLM_PROVIDER remains the fallback for every other LLM surface.
+  return (process.env.AI_TUTOR_PROVIDER ?? process.env.LLM_PROVIDER ?? 'anthropic').toLowerCase();
+}
+
+/** OpenRouter chat model. Runtime variable is AI_TUTOR_MODEL; openrouter/free is a real OpenRouter auto-router slug that resolves to currently-available free models. Blank counts as unset. */
+export function getOpenRouterChatModel(): string {
+  return process.env.AI_TUTOR_MODEL?.trim() || 'openrouter/free';
+}
+
+/** OpenRouter base URL (OpenAI-compatible). Blank counts as unset. */
+export function getOpenRouterBaseUrl(): string {
+  return process.env.AI_TUTOR_BASE_URL?.trim() || 'https://openrouter.ai/api/v1';
+}
+
+/** Server-side Mistral key for AI Tutor chat. STRICT: never sent to the frontend. */
+export function getMistralApiKey(): string {
+  return process.env.AI_TUTOR_API_KEY?.trim() || '';
+}
+
+/** Mistral chat model. Blank counts as unset — never inherit a non-Mistral model name. */
+export function getMistralChatModel(): string {
+  return process.env.AI_TUTOR_CHAT_MODEL?.trim() || 'magistral-small-2506';
 }
 
 /** Server-side Gemini key. STRICT: never falls back to the Anthropic key. */
@@ -118,10 +140,160 @@ class AnthropicHttpProvider implements LlmProvider {
   }
 }
 
+/**
+ * AI Tutor chat provider (Mistral). Same LlmProvider interface and the same
+ * timeout/retry/logging discipline as the other HTTP providers. Key is
+ * server-side only (AI_TUTOR_API_KEY); never logged, never sent to the
+ * frontend. Used ONLY for tutor chat generation — embeddings stay Gemini.
+ */
+class MistralHttpProvider implements LlmProvider {
+  name = 'mistral';
+  async chat(input: ChatCompletionInput): Promise<string> {
+    const apiKey = getMistralApiKey();
+    if (!apiKey) {
+      logger.warn('AI_TUTOR_API_KEY unset — using mock LLM output (tests/dev only)');
+      return new MockLlmProvider().chat(input);
+    }
+    const model = getMistralChatModel();
+    // Blank LLM_BASE_URL must NOT leak into the Mistral path (it is an
+    // Anthropic-oriented variable); Mistral's API base is fixed.
+    const baseUrl = (process.env.AI_TUTOR_BASE_URL?.trim() || 'https://api.mistral.ai').replace(/\/$/, '');
+    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const started = Date.now();
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${apiKey}`,
+            accept: 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: input.maxTokens ?? 1024,
+            messages: [
+              { role: 'system', content: input.system },
+              { role: 'user', content: input.user },
+            ],
+          }),
+          signal: controller.signal,
+        });
+        const latencyMs = Date.now() - started;
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          // Retry only transient 429/5xx; fail fast on 4xx (auth/model).
+          if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
+            logger.warn({ status: res.status, latencyMs, attempt }, 'LLM provider transient error, retrying');
+            lastError = new Error(`LLM provider error: ${res.status}`);
+            continue;
+          }
+          throw new Error(`LLM provider error: ${res.status} ${text.slice(0, 200)}`);
+        }
+        const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        const text = (body.choices ?? []).map((c) => c.message?.content ?? '').join('\n').trim();
+        logger.info({ provider: 'mistral', model, latencyMs }, 'llm chat completed');
+        return text || 'The provider returned an empty response.';
+      } catch (err) {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if ((isAbort || (err instanceof Error && /fetch failed|network/i.test(err.message))) && attempt < maxRetries) {
+          logger.warn({ attempt, timeout: isAbort }, 'LLM request failed transiently, retrying');
+          lastError = err;
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('LLM provider failed');
+  }
+}
+
+/**
+ * AI Tutor chat provider (OpenRouter, OpenAI-compatible). Same LlmProvider
+ * interface and the same timeout/retry/logging discipline as the other HTTP
+ * providers. Key is server-side only (AI_TUTOR_API_KEY); never logged, never
+ * sent to the frontend. Used ONLY for tutor chat generation — embeddings stay
+ * Gemini. Parsing is OpenAI-shaped: choices[0].message.content.
+ */
+class OpenRouterHttpProvider implements LlmProvider {
+  name = 'openrouter';
+  async chat(input: ChatCompletionInput): Promise<string> {
+    const apiKey = getMistralApiKey(); // same server-side AI_TUTOR_API_KEY credential
+    if (!apiKey) {
+      logger.warn('AI_TUTOR_API_KEY unset — using mock LLM output (tests/dev only)');
+      return new MockLlmProvider().chat(input);
+    }
+    const model = getOpenRouterChatModel();
+    const baseUrl = getOpenRouterBaseUrl().replace(/\/$/, '');
+    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const started = Date.now();
+        const res = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${apiKey}`,
+            accept: 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: input.maxTokens ?? 1024,
+            messages: [
+              { role: 'system', content: input.system },
+              { role: 'user', content: input.user },
+            ],
+          }),
+          signal: controller.signal,
+        });
+        const latencyMs = Date.now() - started;
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          // Retry only transient 429/5xx; fail fast on 4xx (auth/model).
+          if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
+            logger.warn({ status: res.status, latencyMs, attempt }, 'LLM provider transient error, retrying');
+            lastError = new Error(`LLM provider error: ${res.status}`);
+            continue;
+          }
+          throw new Error(`LLM provider error: ${res.status} ${text.slice(0, 200)}`);
+        }
+        const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        const text = (body.choices ?? []).map((c) => c.message?.content ?? '').join('\n').trim();
+        logger.info({ provider: 'openrouter', model, latencyMs }, 'llm chat completed');
+        return text || 'The provider returned an empty response.';
+      } catch (err) {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if ((isAbort || (err instanceof Error && /fetch failed|network/i.test(err.message))) && attempt < maxRetries) {
+          logger.warn({ attempt, timeout: isAbort }, 'LLM request failed transiently, retrying');
+          lastError = err;
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('LLM provider failed');
+  }
+}
+
 export function getLlmProvider(): LlmProvider {
   if (overrideLlm) return overrideLlm;
-  if (getLlmProviderName() === 'mock') return new MockLlmProvider();
-  if (getLlmProviderName() === 'gemini') return new GeminiHttpProvider();
+  const name = getLlmProviderName();
+  if (name === 'mock') return new MockLlmProvider();
+  if (name === 'gemini') return new GeminiHttpProvider();
+  if (name === 'openrouter') return new OpenRouterHttpProvider();
+  if (name === 'mistral') return new MistralHttpProvider();
   return new AnthropicHttpProvider();
 }
 

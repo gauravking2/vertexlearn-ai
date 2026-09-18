@@ -17,6 +17,11 @@ afterEach(() => {
   delete process.env.LLM_CHAT_MODEL;
   delete process.env.LLM_PROVIDER;
   delete process.env.GEMINI_API_KEY;
+  // AI Tutor override vars (host .env may carry real values — keep tests hermetic)
+  delete process.env.AI_TUTOR_PROVIDER;
+  delete process.env.AI_TUTOR_API_KEY;
+  delete process.env.AI_TUTOR_CHAT_MODEL;
+  delete process.env.AI_TUTOR_BASE_URL;
   jest.restoreAllMocks();
 });
 

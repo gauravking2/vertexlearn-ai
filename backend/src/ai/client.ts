@@ -44,7 +44,19 @@ export async function callAiServiceChat(input: {
     headers: { 'content-type': 'application/json', ...(aiServiceToken() ? { 'x-ai-service-token': aiServiceToken() } : {}) },
     body: JSON.stringify({ course_id: input.courseId, question: input.question, mode: input.mode, top_k: input.topK ?? 5 }),
   });
-  if (!res.ok) throw new Error(`AI service error: ${res.status}`);
+  if (!res.ok) {
+    // Carry the ai-service coarse error code so the caller can map 429 /
+    // AI_NOT_CONFIGURED / AI_BAD_REQUEST to safe user-facing categories.
+    // Provider bodies are never included.
+    const bodyText = await res.text().catch(() => '');
+    let code = '';
+    try {
+      code = (JSON.parse(bodyText) as { error?: string }).error ?? '';
+    } catch {
+      code = '';
+    }
+    throw new Error(`AI service error: ${res.status}${code ? ` ${code}` : ''}`);
+  }
   return (await res.json()) as AiServiceChatResponse;
 }
 

@@ -23,6 +23,13 @@ def _mocked_providers(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("AI_SERVICE_TOKEN", "")
+    # Hermetic runs: drop AI-tutor override vars so a host shell exporting
+    # them (e.g. AI_TUTOR_PROVIDER=mistral) cannot flip provider routing.
+    monkeypatch.delenv("AI_TUTOR_PROVIDER", raising=False)
+    monkeypatch.delenv("AI_TUTOR_API_KEY", raising=False)
+    monkeypatch.delenv("AI_TUTOR_MODEL", raising=False)
+    monkeypatch.delenv("AI_TUTOR_CHAT_MODEL", raising=False)
+    monkeypatch.delenv("AI_TUTOR_BASE_URL", raising=False)
     reset_settings()
     set_llm_client(MockLlmClient())
     set_embedding_client(MockEmbeddingClient(dim=32))

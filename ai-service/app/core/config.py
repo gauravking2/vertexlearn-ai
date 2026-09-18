@@ -32,6 +32,19 @@ class Settings:
     llm_max_retries: int = field(default_factory=lambda: _int("LLM_MAX_RETRIES", 1))
     # Free-tier runtime key. STRICT: never falls back to the Anthropic key.
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+    # AI Tutor chat override: AI_TUTOR_PROVIDER selects the chat generation
+    # provider (openrouter | mistral | gemini | anthropic | mock). The key is
+    # AI_TUTOR_API_KEY (server-side only). Embeddings stay on Gemini regardless.
+    ai_tutor_provider: str = field(default_factory=lambda: _str("AI_TUTOR_PROVIDER", ""))
+    # OpenRouter chat generation (OpenAI-compatible endpoint). The runtime
+    # variable is AI_TUTOR_MODEL (kept distinct from LLM_CHAT_MODEL on purpose).
+    openrouter_api_key: str = field(default_factory=lambda: os.getenv("AI_TUTOR_API_KEY", ""))
+    openrouter_base_url: str = field(default_factory=lambda: _str("AI_TUTOR_BASE_URL", "https://openrouter.ai/api/v1"))
+    openrouter_chat_model: str = field(default_factory=lambda: _str("AI_TUTOR_MODEL", "openrouter/free"))
+    # Mistral chat generation (compat provider; same AI_TUTOR_* runtime vars).
+    mistral_api_key: str = field(default_factory=lambda: os.getenv("AI_TUTOR_API_KEY", ""))
+    mistral_base_url: str = field(default_factory=lambda: _str("AI_TUTOR_BASE_URL", "https://api.mistral.ai"))
+    mistral_chat_model: str = field(default_factory=lambda: _str("AI_TUTOR_CHAT_MODEL", ""))
     embedding_model: str = field(default_factory=lambda: _str("EMBEDDING_MODEL", "voyage-3-lite"))
     # NOTE: no LLM_API_KEY fallback here (live-verification fix). An Anthropic
     # key is not valid for the Voyage embeddings endpoint; falling back to it

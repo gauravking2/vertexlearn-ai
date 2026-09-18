@@ -215,7 +215,8 @@ test('student: summary, flashcards, study plan, mastery', async ({ page }) => {
   await page.goto(`/courses/${state.courseId}`);
   await page.getByRole('button', { name: 'Study Plan' }).click();
   await page.getByRole('button', { name: /Generate plan/ }).click();
-  await expect(page.getByText(/Target:/)).toBeVisible({ timeout: 60000 });
+  // 3 week cards each render "Target: …" — strict mode needs .first().
+  await expect(page.getByText(/Target:/).first()).toBeVisible({ timeout: 60000 });
   // mastery visible on detail
   await page.goto(`/courses/${state.courseId}`);
   await expect(page.getByText(/beginner|intermediate|advanced/i).first()).toBeVisible();

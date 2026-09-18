@@ -30,6 +30,13 @@ def _gemini_model(settings) -> str:
     return (settings.llm_chat_model or "").strip() or "gemini-3.6-flash"
 
 
+def _openrouter_model(settings) -> str:
+    # AI_TUTOR_MODEL is the runtime variable (e.g. "openrouter/free" — a real
+    # OpenRouter auto-router slug that resolves to currently-available free
+    # models). Blank/whitespace counts as unset (see config._str).
+    return (settings.openrouter_chat_model or "").strip() or "openrouter/free"
+
+
 @dataclass
 class MockLlmClient:
     name: str = "mock"
@@ -38,6 +45,80 @@ class MockLlmClient:
         _ = (system, max_tokens)
         first = user.split("\n")[0][:160]
         return f"Mock answer: {first}"
+
+
+@dataclass
+class OpenRouterLlmClient:
+    """AI Tutor chat generation via OpenRouter (chat ONLY — embeddings stay Gemini).
+
+    OpenRouter is OpenAI-compatible: POST {base}/chat/completions with a
+    Bearer key. Key comes strictly from AI_TUTOR_API_KEY (server-side only;
+    never logged, never returned to clients). Same timeout/retry discipline
+    as Gemini/Mistral. Parsing is OpenAI-shaped: choices[0].message.content.
+    """
+
+    name: str = "openrouter"
+
+    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+        import time
+
+        settings = get_settings()
+        api_key = (settings.openrouter_api_key or "").strip()
+        if not api_key:
+            logger.warning("AI_TUTOR_API_KEY unset — mock output (tests/dev only)")
+            return MockLlmClient().chat(system, user, max_tokens)
+        model = _openrouter_model(settings)
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        timeout = max(1, settings.llm_timeout_s)
+        max_retries = min(max(0, settings.llm_max_retries), 5)
+        last_error: Exception | None = None
+        url = settings.openrouter_base_url.rstrip("/") + "/chat/completions"
+        for attempt in range(max_retries + 1):
+            started = time.monotonic()
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode(),
+                    headers={"content-type": "application/json", "authorization": f"Bearer {api_key}", "accept": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as res:
+                    body = json.loads(res.read().decode())
+                latency_ms = int((time.monotonic() - started) * 1000)
+                parts = [
+                    (choice.get("message") or {}).get("content", "")
+                    for choice in body.get("choices", [])
+                ]
+                logger.info("llm chat completed provider=openrouter model=%s latency_ms=%d", model, latency_ms)
+                return "\n".join(p for p in parts if p).strip() or "The provider returned an empty response."
+            except urllib.error.HTTPError as exc:
+                latency_ms = int((time.monotonic() - started) * 1000)
+                detail = ""
+                try:
+                    detail = exc.read().decode()[:200]
+                except Exception:
+                    detail = ""
+                logger.warning("llm provider http error status=%s latency_ms=%d attempt=%d", exc.code, latency_ms, attempt)
+                # Retry only transient 429/5xx; fail fast on auth/model 4xx.
+                if (exc.code == 429 or (exc.code is not None and exc.code >= 500)) and attempt < max_retries:
+                    last_error = Exception(f"LLM provider error: {exc.code} {detail}")
+                    continue
+                raise Exception(f"LLM provider error: {exc.code} {detail}") from exc
+            except Exception as exc:  # timeout / network
+                latency_ms = int((time.monotonic() - started) * 1000)
+                logger.warning("llm request failed attempt=%d latency_ms=%d err=%s", attempt, latency_ms, type(exc).__name__)
+                last_error = exc if isinstance(exc, Exception) else Exception(str(exc))
+                if attempt < max_retries:
+                    continue
+                raise
+        raise last_error or Exception("LLM provider failed")
 
 
 @dataclass
@@ -109,11 +190,15 @@ def set_llm_client(client: LlmClient | None) -> None:
 def get_llm_client() -> LlmClient:
     if _override is not None:
         return _override
-    provider = (get_settings().llm_provider or "").lower()
+    provider = (get_settings().ai_tutor_provider or get_settings().llm_provider or "").lower()
     if provider == "mock":
         return MockLlmClient()
     if provider == "gemini":
         return GeminiLlmClient()
+    if provider == "openrouter":
+        return OpenRouterLlmClient()
+    if provider == "mistral":
+        return MistralLlmClient()
     return AnthropicLlmClient()
 
 
@@ -169,6 +254,78 @@ class GeminiLlmClient:
                 except Exception:
                     detail = ""
                 logger.warning("llm provider http error status=%s latency_ms=%d attempt=%d", exc.code, latency_ms, attempt)
+                if (exc.code == 429 or (exc.code is not None and exc.code >= 500)) and attempt < max_retries:
+                    last_error = Exception(f"LLM provider error: {exc.code} {detail}")
+                    continue
+                raise Exception(f"LLM provider error: {exc.code} {detail}") from exc
+            except Exception as exc:  # timeout / network
+                latency_ms = int((time.monotonic() - started) * 1000)
+                logger.warning("llm request failed attempt=%d latency_ms=%d err=%s", attempt, latency_ms, type(exc).__name__)
+                last_error = exc if isinstance(exc, Exception) else Exception(str(exc))
+                if attempt < max_retries:
+                    continue
+                raise
+        raise last_error or Exception("LLM provider failed")
+
+
+@dataclass
+class MistralLlmClient:
+    """AI Tutor chat generation via Mistral (chat ONLY — embeddings stay Gemini).
+
+    Key comes strictly from AI_TUTOR_API_KEY (server-side only; never logged,
+    never returned to clients). Same timeout/retry discipline as Gemini.
+    """
+
+    name: str = "mistral"
+
+    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+        import time
+
+        settings = get_settings()
+        api_key = (settings.mistral_api_key or "").strip()
+        if not api_key:
+            logger.warning("AI_TUTOR_API_KEY unset — mock output (tests/dev only)")
+            return MockLlmClient().chat(system, user, max_tokens)
+        model = (settings.mistral_chat_model or "magistral-small-2506").strip()
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        timeout = max(1, settings.llm_timeout_s)
+        max_retries = min(max(0, settings.llm_max_retries), 5)
+        last_error: Exception | None = None
+        url = settings.mistral_base_url.rstrip("/") + "/v1/chat/completions"
+        for attempt in range(max_retries + 1):
+            started = time.monotonic()
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode(),
+                    headers={"content-type": "application/json", "authorization": f"Bearer {api_key}", "accept": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as res:
+                    body = json.loads(res.read().decode())
+                latency_ms = int((time.monotonic() - started) * 1000)
+                parts = [
+                    (choice.get("message") or {}).get("content", "")
+                    for choice in body.get("choices", [])
+                ]
+                logger.info("llm chat completed provider=mistral model=%s latency_ms=%d", model, latency_ms)
+                return "\n".join(p for p in parts if p).strip() or "The provider returned an empty response."
+            except urllib.error.HTTPError as exc:
+                latency_ms = int((time.monotonic() - started) * 1000)
+                detail = ""
+                try:
+                    detail = exc.read().decode()[:200]
+                except Exception:
+                    detail = ""
+                logger.warning("llm provider http error status=%s latency_ms=%d attempt=%d", exc.code, latency_ms, attempt)
+                # Retry only transient 429/5xx; fail fast on auth/model 4xx.
                 if (exc.code == 429 or (exc.code is not None and exc.code >= 500)) and attempt < max_retries:
                     last_error = Exception(f"LLM provider error: {exc.code} {detail}")
                     continue

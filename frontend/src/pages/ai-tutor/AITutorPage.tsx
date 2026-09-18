@@ -5,8 +5,8 @@ import { useCreateChatSession, useSendMessage, useSessionMessages, useUpdateSess
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { getApiErrorMessage } from '@/components/common/apiError';
-import { Send, Bot, User, BookOpen, AlertCircle } from 'lucide-react';
+import { getAiTutorErrorMessage } from '@/components/common/apiError';
+import { Send, Bot, User, BookOpen, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { AIMode } from '@/types';
 
 interface UIMessage {
@@ -16,6 +16,13 @@ interface UIMessage {
   sources?: { ref: string; lectureTitle: string }[];
   createdAt: string;
 }
+
+const STARTER_PROMPTS = [
+  'Explain this topic in simple terms',
+  'Give me an example',
+  'What should I revise before the quiz?',
+  'Summarize the key concepts',
+];
 
 export const AITutorPage = () => {
   const { courseId } = useParams<{ courseId: string }>();
@@ -54,9 +61,8 @@ export const AITutorPage = () => {
     }
   };
 
-  const handleSendMessage = () => {
-    if (!message.trim() || !activeSessionId) return;
-    const text = message.trim();
+  const sendText = (text: string) => {
+    if (!activeSessionId || !text.trim()) return;
     resetSend();
     setPendingUserMessage(text);
     setMessage('');
@@ -72,6 +78,8 @@ export const AITutorPage = () => {
       }
     );
   };
+
+  const handleSendMessage = () => sendText(message);
 
   const handleDismissSendError = () => {
     resetSend();
@@ -96,48 +104,56 @@ export const AITutorPage = () => {
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col space-y-4">
-      <Card>
+      <Card className="animate-fade-up">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#F2E3D6] rounded-full flex items-center justify-center">
-              <Bot className="text-[#C4612F]" size={20} />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center shadow-glow" aria-hidden="true">
+              <Bot className="text-white" size={20} />
             </div>
             <div>
-              <h1 className="text-xl font-serif text-[#1F2421]">
-                AI <span className="italic text-[#C4612F]">Tutor</span>
+              <h1 className="text-xl font-serif text-[#1F2421] dark:text-[#ece9e2]">
+                AI <span className="italic text-[#C4612F] dark:text-[#e8a06f]">Tutor</span>
               </h1>
-              <p className="text-sm text-[#5C635D]">{course.title}</p>
+              <p className="text-sm text-[#5C635D] dark:text-[#b9beb4]">
+                <span className="inline-flex items-center gap-1.5">
+                  <BookOpen size={12} aria-hidden="true" />
+                  {course.title}
+                </span>
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-sm text-[#5C635D]">Mode:</span>
-            {(['beginner', 'intermediate', 'advanced'] as AIMode[]).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => handleModeChange(mode)}
-                className={`px-3 py-1.5 rounded-full text-sm transition-all ${
-                  selectedMode === mode
-                    ? 'bg-[#A94E22] text-white'
-                    : 'bg-[#FBF9F5] text-[#5C635D] hover:bg-[#F2E3D6]'
-                }`}
-              >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </button>
-            ))}
+            <span className="text-sm text-[#5C635D] dark:text-[#b9beb4]">Mode:</span>
+            <div role="group" aria-label="Explanation mode">
+              {(['beginner', 'intermediate', 'advanced'] as AIMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => handleModeChange(mode)}
+                  aria-pressed={selectedMode === mode}
+                  className={`px-3 py-1.5 rounded-full text-sm transition-all ${
+                    selectedMode === mode
+                      ? 'bg-gradient-to-r from-[#7C3AED] to-[#6D28D9] text-white shadow-soft'
+                      : 'bg-[#FBF9F5] dark:bg-[#23261f] text-[#5C635D] dark:text-[#b9beb4] hover:bg-[#F2E3D6] dark:hover:bg-[#2c241c]'
+                  }`}
+                >
+                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </Card>
 
       <Card className="flex-1 flex flex-col overflow-hidden">
         {!activeSessionId ? (
-          <div className="flex flex-col items-center justify-center h-full">
-            <div className="w-16 h-16 bg-[#F2E3D6] rounded-full flex items-center justify-center mb-4">
-              <Bot className="text-[#C4612F]" size={28} />
+          <div className="flex flex-col items-center justify-center h-full animate-fade-up">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center mb-4 shadow-glow">
+              <Sparkles className="text-white" size={28} />
             </div>
-            <h3 className="text-lg font-serif text-[#1F2421] mb-2">Course Tutor</h3>
-            <p className="text-sm text-[#5C635D] mb-4 text-center max-w-md">
-              Ask anything about {course.title}. Answers are grounded in the indexed course material.
+            <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-2">Course Tutor</h3>
+            <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-4 text-center max-w-md">
+              Ask anything about {course.title}. Answers are grounded in the indexed course material with source citations.
             </p>
             <Button onClick={handleCreateSession} loading={creatingSession}>
               Start tutoring session
@@ -145,122 +161,146 @@ export const AITutorPage = () => {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto mb-4 space-y-4">
+            <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-1">
               {loadingMessages && <LoadingSpinner text="Loading messages..." />}
 
               {messages.length === 0 && !loadingMessages && !pendingUserMessage && (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="w-16 h-16 bg-[#F2E3D6] rounded-full flex items-center justify-center mb-4">
-                    <Bot className="text-[#C4612F]" size={28} />
+                <div className="flex flex-col items-center justify-center h-full text-center animate-fade-up">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center mb-4 shadow-glow">
+                    <Sparkles className="text-white" size={28} />
                   </div>
-                  <h3 className="text-lg font-serif text-[#1F2421] mb-2">Start a conversation</h3>
-                  <p className="text-sm text-[#5C635D] max-w-md">
+                  <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-2">Start a conversation</h3>
+                  <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] max-w-md mb-4">
                     Ask me anything about {course.title}. If the course material does not cover it, I will say so.
                   </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-lg w-full">
+                    {STARTER_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt}
+                        onClick={() => sendText(prompt)}
+                        className="text-left text-sm px-3 py-2.5 rounded-xl border border-[#E7E1D7] dark:border-[#2c2f2a] bg-[#FBF9F5] dark:bg-[#23261f] text-[#5C635D] dark:text-[#b9beb4] hover:border-[#7C3AED] hover:text-[#7C3AED] dark:hover:border-[#8B5CF6] dark:hover:text-[#A78BFA] transition-colors"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
               {messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex gap-3 vl-msg-in ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   {msg.role === 'assistant' && (
-                    <div className="w-8 h-8 bg-[#F2E3D6] rounded-full flex items-center justify-center shrink-0">
-                      <Bot className="text-[#C4612F]" size={16} />
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center shrink-0" aria-hidden="true">
+                      <Bot className="text-white" size={16} />
                     </div>
                   )}
                   <div
-                    className={`max-w-[70%] px-4 py-3 rounded-lg ${
+                    className={`max-w-[70%] px-4 py-3 rounded-2xl ${
                       msg.role === 'user'
-                        ? 'bg-[#A94E22] text-white'
-                        : 'bg-[#FBF9F5] text-[#1F2421]'
+                        ? 'bg-gradient-to-r from-[#7C3AED] to-[#6D28D9] text-white rounded-br-md'
+                        : 'bg-[#FBF9F5] dark:bg-[#23261f] text-[#1F2421] dark:text-[#ece9e2] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-bl-md'
                     }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                     {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-[#E7E1D7] space-y-1">
-                        <p className="text-xs font-medium text-[#5C635D]">Sources:</p>
-                        {msg.sources.map((s, sIdx) => (
-                          <div key={sIdx} className="flex items-start gap-2 text-xs">
-                            <BookOpen size={12} className="text-[#C4612F] mt-0.5" />
-                            <span className="text-[#5C635D]">{s.ref} — {s.lectureTitle}</span>
-                          </div>
-                        ))}
+                      <div className="mt-3 pt-3 border-t border-[#E7E1D7] dark:border-[#2c2f2a] space-y-1">
+                        <p className="text-xs font-medium text-[#5C635D] dark:text-[#b9beb4] flex items-center gap-1.5">
+                          <BookOpen size={12} aria-hidden="true" /> Sources:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {msg.sources.map((s, sIdx) => (
+                            <span
+                              key={sIdx}
+                              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-[#F2E3D6] dark:bg-[#2c241c] text-[#8A3E1C] dark:text-[#e8a06f]"
+                              title={s.ref}
+                            >
+                              {s.ref} — {s.lectureTitle}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {msg.content.toLowerCase().includes('could not find') && (
-                      <div className="mt-3 pt-3 border-t border-[#E7E1D7] flex items-start gap-2">
-                        <AlertCircle size={14} className="text-yellow-600 mt-0.5" />
-                        <p className="text-xs text-[#5C635D]">Grounded limitation: the tutor could not confirm this from course material.</p>
+                      <div className="mt-3 pt-3 border-t border-[#E7E1D7] dark:border-[#2c2f2a] flex items-start gap-2">
+                        <AlertCircle size={14} className="text-yellow-600 dark:text-yellow-400 mt-0.5" aria-hidden="true" />
+                        <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">Grounded limitation: the tutor could not confirm this from course material.</p>
                       </div>
                     )}
                   </div>
                   {msg.role === 'user' && (
-                    <div className="w-8 h-8 bg-[#1F2421] rounded-full flex items-center justify-center shrink-0">
-                      <User className="text-white" size={16} />
+                    <div className="w-8 h-8 rounded-lg bg-[#1F2421] dark:bg-[#ece9e2] flex items-center justify-center shrink-0" aria-hidden="true">
+                      <User className="text-white dark:text-[#12140f]" size={16} />
                     </div>
                   )}
                 </div>
               ))}
 
               {pendingUserMessage && (
-                <div className="flex gap-3 justify-end">
-                  <div className="bg-[#A94E22] text-white max-w-[70%] px-4 py-3 rounded-lg">
+                <div className="flex gap-3 vl-msg-in justify-end">
+                  <div className="bg-gradient-to-r from-[#7C3AED] to-[#6D28D9] text-white max-w-[70%] px-4 py-3 rounded-2xl rounded-br-md">
                     <p className="text-sm whitespace-pre-wrap">{pendingUserMessage}</p>
                   </div>
-                  <div className="w-8 h-8 bg-[#1F2421] rounded-full flex items-center justify-center shrink-0">
-                    <User className="text-white" size={16} />
+                  <div className="w-8 h-8 rounded-lg bg-[#1F2421] dark:bg-[#ece9e2] flex items-center justify-center shrink-0" aria-hidden="true">
+                    <User className="text-white dark:text-[#12140f]" size={16} />
                   </div>
                 </div>
               )}
 
               {sendingMessage && (
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 bg-[#F2E3D6] rounded-full flex items-center justify-center shrink-0">
-                    <Bot className="text-[#C4612F]" size={16} />
+                <div className="flex gap-3 vl-msg-in">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center shrink-0" aria-hidden="true">
+                    <Bot className="text-white" size={16} />
                   </div>
-                  <div className="bg-[#FBF9F5] px-4 py-3 rounded-lg">
+                  <div className="bg-[#FBF9F5] dark:bg-[#23261f] px-4 py-3 rounded-2xl rounded-bl-md border border-[#E7E1D7] dark:border-[#2c2f2a]">
                     <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-[#C4612F] rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-[#C4612F] rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                      <div className="w-2 h-2 bg-[#C4612F] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                      <div className="w-2 h-2 bg-[#7C3AED] rounded-full animate-bounce" />
+                      <div className="w-2 h-2 bg-[#7C3AED] rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                      <div className="w-2 h-2 bg-[#7C3AED] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                     </div>
                   </div>
                 </div>
               )}
               {sendFailed && !sendingMessage && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
-                  <p className="text-sm text-red-800 mb-2">
-                    The tutor is unavailable right now ({getApiErrorMessage(sendError)}). Your question was kept below — try sending it again.
+                <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-xl vl-msg-in" role="alert">
+                  <p className="text-sm text-red-800 dark:text-red-200 mb-2">
+                    {getAiTutorErrorMessage(sendError)} Your question was kept below — try sending it again.
                   </p>
-                  <Button size="sm" variant="outline" onClick={handleDismissSendError}>Dismiss</Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => message.trim() && sendText(message)}>
+                      <RefreshCw size={14} aria-hidden="true" /> Retry
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={handleDismissSendError}>Dismiss</Button>
+                  </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="border-t border-[#E7E1D7] pt-4">
+            <div className="border-t border-[#E7E1D7] dark:border-[#2c2f2a] pt-4">
               <div className="flex gap-2">
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={handleKeyPress}
                   placeholder="Ask a question about the course..."
-                  className="flex-1 px-4 py-2.5 bg-[#FBF9F5] border border-[#E7E1D7] rounded-lg text-[#1F2421] placeholder:text-[#5C635D] focus:outline-none focus:ring-2 focus:ring-[#C4612F] resize-none"
+                  aria-label="Ask a question about the course"
+                  className="flex-1 px-4 py-2.5 bg-[#FBF9F5] dark:bg-[#23261f] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-xl text-[#1F2421] dark:text-[#ece9e2] placeholder:text-[#5C635D] dark:placeholder:text-[#8a9184] focus:outline-none focus:ring-2 focus:ring-[#7C3AED] resize-none"
                   rows={2}
                   disabled={sendingMessage}
                 />
                 <Button
                   onClick={handleSendMessage}
                   disabled={!message.trim() || sendingMessage}
-                  className="self-end"
+                  className="self-end !bg-gradient-to-r !from-[#7C3AED] !to-[#6D28D9] hover:!shadow-glow"
                   aria-label="Send message"
                 >
                   <Send size={18} aria-hidden="true" />
                 </Button>
               </div>
-              <p className="text-xs text-[#5C635D] mt-2">
+              <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mt-2">
                 Answers use only the indexed course material. Press Enter to send, Shift+Enter for a new line.
               </p>
             </div>

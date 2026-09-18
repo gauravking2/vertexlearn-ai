@@ -51,17 +51,18 @@ export const StudentDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Hero */}
-      <div className="relative rounded-2xl overflow-hidden">
+      <div className="relative rounded-2xl overflow-hidden shadow-lift">
         <div
           className="p-6 sm:p-8"
-          style={{ background: 'linear-gradient(135deg, hsl(24 65% 32%) 0%, hsl(262 55% 28%) 55%, hsl(222 50% 14%) 100%)' }}
+          style={{ background: 'linear-gradient(135deg, hsl(258 80% 46%) 0%, hsl(262 55% 28%) 45%, hsl(222 50% 14%) 100%)' }}
         >
-          <p className="text-sm text-white/75 mb-1">Welcome back{user?.name ? `, ${user.name}` : ''}</p>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-white mb-2">
+          <div className="absolute inset-0 opacity-40" aria-hidden="true" style={{ background: 'radial-gradient(600px 200px at 80% 0%, rgba(6,182,212,0.35), transparent)' }} />
+          <p className="text-sm text-white/75 mb-1 relative">Welcome back{user?.name ? `, ${user.name}` : ''}</p>
+          <h1 className="text-3xl font-serif font-normal tracking-tight text-white mb-2 relative">
             Your Learning Journey
           </h1>
-          <p className="text-white/85">Continue where you left off</p>
-          <div className="flex flex-wrap gap-2 mt-4">
+          <p className="text-white/85 relative">Continue where you left off — your courses, streak, and AI tutor are one click away.</p>
+          <div className="flex flex-wrap gap-2 mt-4 relative">
             <Button size="sm" variant="secondary" as={Link} to="/courses">Browse Courses</Button>
             {activeCourses[0] && continueHref(activeCourses[0]) && (
               <Button size="sm" variant="outline" as={Link} to={continueHref(activeCourses[0])!} className="!text-white !border-white/40 hover:!bg-white/10">
@@ -77,14 +78,14 @@ export const StudentDashboard = () => {
         {stats.map((s) => {
           const Icon = s.icon;
           return (
-            <Card key={s.label} role="listitem">
+            <Card key={s.label} role="listitem" className="vl-lift">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#F2E3D6] rounded-full flex items-center justify-center shrink-0" aria-hidden="true">
-                  <Icon className="text-[#C4612F]" size={20} />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7C3AED]/15 to-[#06B6D4]/15 flex items-center justify-center shrink-0" aria-hidden="true">
+                  <Icon className="text-[#7C3AED] dark:text-[#A78BFA]" size={20} />
                 </div>
                 <div>
-                  <p className="text-2xl font-serif text-[#1F2421]">{s.value}</p>
-                  <p className="text-xs text-[#5C635D]">{s.label}</p>
+                  <p className="text-2xl font-serif text-[#1F2421] dark:text-[#ece9e2]">{s.value}</p>
+                  <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">{s.label}</p>
                 </div>
               </div>
             </Card>
@@ -102,21 +103,21 @@ export const StudentDashboard = () => {
               if (!href) return null;
               const pct = safePercent(enrollment.progressPercent);
               return (
-                <Card key={enrollment.id} hover>
+                <Card key={enrollment.id} hover className="vl-lift">
                   <Link to={href} aria-label={`Continue ${enrollment.courseTitle}`}>
                     <div className="flex items-start gap-4">
                       <div
-                        className="w-20 h-20 rounded-lg shrink-0 flex items-center justify-center text-2xl font-serif text-white"
+                        className="w-20 h-20 rounded-xl shrink-0 flex items-center justify-center text-2xl font-serif text-white shadow-soft"
                         style={{ background: categoryCover(enrollment.courseTitle) }}
                         aria-hidden="true"
                       >
                         {categoryInitial(enrollment.courseTitle)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-[#1F2421] mb-1 truncate">
+                        <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2] mb-1 truncate">
                           {enrollment.courseTitle}
                         </h3>
-                        <p className="text-xs text-[#5C635D] mb-2 capitalize">{enrollment.courseStatus || 'Enrolled'}</p>
+                        <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mb-2 capitalize">{enrollment.courseStatus || 'Enrolled'}</p>
                         <ProgressBar progress={pct} showLabel />
                       </div>
                     </div>

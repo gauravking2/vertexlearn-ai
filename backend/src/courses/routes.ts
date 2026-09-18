@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate, authorize } from '../auth/middleware';
+import { authenticate, authenticateOptional, authorize } from '../auth/middleware';
 import { db, newId } from '../db/pool';
 import { forbidden, notFound } from '../errors';
 import { validateBody } from '../middleware/validate';
@@ -50,10 +50,30 @@ const RATING_JOIN = `LEFT JOIN (
 
 export const coursesRouter = Router();
 
-coursesRouter.get('/', async (req, res, next) => {
+/**
+ * Published-only visibility for the PUBLIC catalog.
+ *
+ * Root cause of the historic "Enroll Now → Course is not open for enrollment"
+ * confusion: the catalog listed pending/rejected courses to everyone, so
+ * students clicked Enroll on courses that were never approved (403 by design).
+ * The enrollment guard itself was correct and is NOT weakened.
+ *
+ * Visibility rules:
+ * - Anonymous callers: published courses only.
+ * - Instructors/admins: see everything (they manage the full lifecycle).
+ * - Students: published only (pending/rejected are admin matters), and a
+ *   valid token is required — an invalid one degrades to anonymous.
+ */
+coursesRouter.get('/', authenticateOptional, async (req, res, next) => {
   try {
     const { page, pageSize, q, status, category, difficulty, minRating } = listQuery.parse(req.query);
-    const cacheKey = catalogCacheKey({ page, pageSize, q, status, category, difficulty, minRating });
+    const privileged = !!req.user && (req.user.roles.includes('admin') || req.user.roles.includes('instructor'));
+    // Non-privileged callers are always pinned to published; privileged callers
+    // may filter by any status or omit it (see all statuses).
+    const effectiveStatus = privileged ? status : 'published';
+    // Cache key includes the visibility so a privileged listing can never be
+    // served to an anonymous caller (and vice versa).
+    const cacheKey = catalogCacheKey({ page, pageSize, q, status: effectiveStatus, category, difficulty, minRating, vis: privileged ? 'all' : 'public' });
     const cached = await cacheGet<{ data: unknown[]; page: number; pageSize: number; total: number }>(cacheKey);
     if (cached.hit && cached.value) {
       res.setHeader('x-cache', 'HIT');
@@ -62,8 +82,8 @@ coursesRouter.get('/', async (req, res, next) => {
     }
     const baseWhere: string[] = [];
     const baseParams: unknown[] = [];
-    if (status) {
-      baseParams.push(status);
+    if (effectiveStatus) {
+      baseParams.push(effectiveStatus);
       baseWhere.push(`c.status = $${baseParams.length}`);
     }
     if (q) {
@@ -123,8 +143,9 @@ coursesRouter.get('/', async (req, res, next) => {
       }
     }
     if (!rows) {
-      const legacyClause = baseWhere.length ? `WHERE ${baseWhere.join(' AND ')}` : '';
-      const legacyTotal = await db.query(`SELECT COUNT(*)::int AS count FROM courses c ${legacyClause}`, baseParams);
+    // Legacy fallback (migration 005 absent) must honor the same visibility.
+    const legacyClause = baseWhere.length ? `WHERE ${baseWhere.join(' AND ')}` : '';
+    const legacyTotal = await db.query(`SELECT COUNT(*)::int AS count FROM courses c ${legacyClause}`, baseParams);
       const legacy = await db.query(
         `SELECT c.id, c.title, c.description, c.status, c.instructor_id, c.created_at, c.updated_at
          FROM courses c ${legacyClause} ORDER BY c.created_at DESC LIMIT $${baseParams.length + 1} OFFSET $${baseParams.length + 2}`,
@@ -148,8 +169,6 @@ coursesRouter.get('/', async (req, res, next) => {
 coursesRouter.get('/:id', async (req, res, next) => {
   try {
     const metaKey = courseMetaCacheKey(req.params.id);
-    // Course detail includes module/lecture structure (public metadata only).
-    // Per-user enrollment state is never cached — only the shared metadata.
     const cached = await cacheGet<Record<string, unknown>>(metaKey);
     if (cached.hit && cached.value) {
       res.setHeader('x-cache', 'HIT');
@@ -207,6 +226,7 @@ coursesRouter.get('/:id', async (req, res, next) => {
     next(err);
   }
 });
+
 
 coursesRouter.post('/', authenticate, authorize('instructor', 'admin'), validateBody(courseSchema), async (req, res, next) => {
   try {

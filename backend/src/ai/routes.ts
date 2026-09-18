@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate, authorize } from '../auth/middleware';
 import { db, newId } from '../db/pool';
-import { badRequest, conflict, forbidden, notFound } from '../errors';
+import { ApiError, badRequest, conflict, forbidden, notFound } from '../errors';
 import { validateBody } from '../middleware/validate';
 import { requireCourseOwner } from '../courses/ownership';
 import { getLectureCourse, isEnrolled } from '../learning/guards';
@@ -63,6 +63,40 @@ async function requireCourseAccessOr404(courseId: string, user: { id: string; ro
 
 function noContextAnswer(): string {
   return 'I could not find this in the course material. The retrieved lectures do not cover your question, so I will not guess. Try rephrasing, or check whether the topic is covered in a different lecture.';
+}
+
+/**
+ * Map an LLM/AI-service failure to a safe API error. Never leaks stack traces,
+ * provider bodies, headers, URLs, or key material — only a coarse category.
+ * 429 (or provider rate-limit text) → 429 RATE_LIMITED; 401-style config
+ * problems → 503 AI_NOT_CONFIGURED; malformed requests → 400 AI_BAD_REQUEST;
+ * upstream timeouts → 504 AI_TIMEOUT; everything else → 503
+ * PROVIDER_UNAVAILABLE. Works for both the direct LLM path ("LLM provider
+ * error: <status>") and the ai-service proxy path ("AI service error:
+ * <status> <CODE>").
+ */
+function aiProviderError(err: unknown): ApiError {
+  const message = err instanceof Error ? err.message : String(err);
+  const llm = /LLM provider error: (\d{3})/.exec(message);
+  const svc = /AI service error: (\d{3})(?: ([A-Z_]+))?/.exec(message);
+  const status = llm ? Number(llm[1]) : svc ? Number(svc[1]) : undefined;
+  const code = svc?.[2] ?? '';
+  if (status === 429 || /rate.?limit/i.test(message)) {
+    return new ApiError(429, 'RATE_LIMITED', 'AI Tutor is temporarily rate-limited. Please try again shortly.');
+  }
+  if (code === 'AI_NOT_CONFIGURED' || (status !== undefined && [401, 403].includes(status))) {
+    return new ApiError(503, 'AI_NOT_CONFIGURED', 'AI Tutor configuration is invalid. Please contact the administrator.');
+  }
+  if (code === 'AI_BAD_REQUEST' || status === 400) {
+    return new ApiError(400, 'AI_BAD_REQUEST', 'The AI Tutor request could not be processed.');
+  }
+  if (code === 'AI_TIMEOUT' || status === 504) {
+    return new ApiError(504, 'AI_TIMEOUT', 'AI Tutor took too long to respond. Please try again.');
+  }
+  if (/AI_TUTOR_API_KEY|GEMINI_API_KEY|not configured/i.test(message)) {
+    return new ApiError(503, 'AI_NOT_CONFIGURED', 'AI Tutor configuration is invalid. Please contact the administrator.');
+  }
+  return new ApiError(503, 'PROVIDER_UNAVAILABLE', 'AI Tutor is temporarily unavailable. Please try again.');
 }
 
 aiRouter.post('/ai/chat/sessions', authenticate, authorize('student', 'instructor', 'admin'), validateBody(sessionSchema), async (req, res, next) => {
@@ -155,7 +189,7 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
           grounded = false;
         }
       } catch (err) {
-        next(err);
+        next(aiProviderError(err));
         return;
       }
     } else if (!hasRetrievalSupport(sources)) {
@@ -164,10 +198,16 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
     } else {
       const citations = toCitations(sources);
       const llm = getLlmProvider();
-      const raw = await llm.chat({
-        system: buildGroundedSystemPrompt(session.mode),
-        user: buildGroundedUserPrompt(body.content, citations),
-      });
+      let raw: string;
+      try {
+        raw = await llm.chat({
+          system: buildGroundedSystemPrompt(session.mode),
+          user: buildGroundedUserPrompt(body.content, citations),
+        });
+      } catch (err) {
+        next(aiProviderError(err));
+        return;
+      }
       answer = stripForeignCitations(raw, allowedRefs);
       grounded = true;
     }

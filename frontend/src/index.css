@@ -112,6 +112,70 @@ html.dark .placeholder\:text-\[\#5C635D\]:not([class*="dark:placeholder"])::plac
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Phase 19: polished micro-interaction utilities ---- */
+/* Card hover lift (used with the existing Card hover prop). */
+.vl-lift {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  will-change: transform;
+}
+.vl-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px -8px rgba(15, 23, 42, 0.18), 0 4px 10px -4px rgba(15, 23, 42, 0.1);
+}
+
+/* Button press feedback (applied globally; subtle, 120ms). */
+.vl-press:active {
+  transform: scale(0.985);
+}
+
+/* Skeleton shimmer block for loading states. */
+.vl-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(124, 58, 237, 0.06);
+  border-radius: 0.5rem;
+}
+.vl-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.12), transparent);
+  background-size: 200% 100%;
+  animation: vl-shimmer 1.6s linear infinite;
+}
+@keyframes vl-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* AI message entrance: quick fade-up, no bounce. */
+.vl-msg-in {
+  animation: fade-in 200ms ease-out both;
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vl-lift,
+  .vl-lift:hover {
+    transform: none;
+    transition: none;
+  }
+  .vl-press:active {
+    transform: none;
+  }
+  .vl-skeleton::after {
+    animation: none;
+  }
+  .vl-msg-in {
+    animation: none;
   }
 }

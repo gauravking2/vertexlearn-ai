@@ -86,8 +86,9 @@ export const CourseDetail = () => {
   return (
     <div className="space-y-6">
       {/* Hero Section */}
-      <div className="relative rounded-2xl overflow-hidden">
-        <div className="h-56 sm:h-72 p-6 sm:p-8 flex flex-col justify-end" style={{ background: categoryCover(course.category) }}>
+      <div className="relative rounded-2xl overflow-hidden shadow-lift animate-fade-up">
+        <div className="h-56 sm:h-72 p-6 sm:p-8 flex flex-col justify-end relative" style={{ background: categoryCover(course.category) }}>
+          <div className="absolute inset-0 opacity-35" aria-hidden="true" style={{ background: 'radial-gradient(500px 180px at 85% 0%, rgba(255,255,255,0.30), transparent)' }} />
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {course.category && (
               <span className="px-3 py-1 bg-white/15 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm">
@@ -236,13 +237,15 @@ export const CourseDetail = () => {
                 ) : (
                   <p className="text-sm text-[#5C635D] text-center">Lectures coming soon.</p>
                 )}
-                <Button
-                  fullWidth
-                  variant="outline"
-                  onClick={() => navigate(`/ai-tutor/${course.id}`)}
-                >
-                  AI Tutor
-                </Button>
+                {isEnrolled && (
+                  <Button
+                    fullWidth
+                    onClick={() => navigate(`/ai-tutor/${course.id}`)}
+                    className="!bg-gradient-to-r !from-[#7C3AED] !to-[#6D28D9] hover:!shadow-glow"
+                  >
+                    AI Tutor
+                  </Button>
+                )}
                 <div className="flex gap-2">
                   <Button
                     fullWidth
