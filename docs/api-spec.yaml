@@ -1,0 +1,868 @@
+openapi: 3.0.3
+info:
+  title: VertexLearn AI API
+  version: 0.7.0
+  description: Phase 7 surface — auth, course foundation, learning core, AI tutor/RAG (course-isolated), summaries, AI quiz drafts, flashcards, study plans, mastery, recommendations, admin workspace, course approvals, discussions, announcements, notifications, email abstraction, S3/MinIO storage (uploads, signed URLs), catalog filters/reviews, payments/revenue, Redis caching (catalog/course/leaderboard, x-cache), rate limits (auth 10/min/IP, AI 20/min/user, global 100/min), gamification leaderboard, health/ready aliases.
+servers:
+  - url: http://localhost:4000
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe (service identity + version)
+      responses:
+        '200':
+          description: OK
+  /health:
+    get:
+      summary: Liveness alias (Phase 7 observability pair)
+      responses:
+        '200':
+          description: OK
+  /readyz:
+    get:
+      summary: Readiness probe (Postgres + Redis, service identity)
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+  /api/v1/auth/register:
+    post:
+      summary: Register with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+                role: { type: string, enum: [student, instructor] }
+      responses:
+        '201': { description: Created }
+        '400': { description: Validation error }
+        '409': { description: Email taken or admin self-registration }
+  /api/v1/auth/login:
+    post:
+      summary: Login, returns access + refresh tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: Authenticated }
+        '401': { description: Invalid credentials }
+  /api/v1/auth/refresh:
+    post:
+      summary: Rotate refresh token (single-use)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: New token pair }
+        '401': { description: Invalid or expired refresh token }
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '204': { description: Revoked }
+  /api/v1/auth/me:
+    get:
+      summary: Current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Current user }
+        '401': { description: Unauthorized }
+  /api/v1/courses:
+    get:
+      summary: Public catalog (paginated, searchable, filterable by status/category/difficulty/minRating; includes avg_rating/rating_count; Redis-cached 60s with x-cache HIT/MISS)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20 } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [draft, pending, published, rejected] } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: difficulty, in: query, schema: { type: string, enum: [beginner, intermediate, advanced] } }
+        - { name: minRating, in: query, schema: { type: number, minimum: 0, maximum: 5 } }
+      responses:
+        '200': { description: Paginated courses with rating aggregates }
+        '429': { description: Rate limited (global 100/min backstop) }
+    post:
+      summary: Create course (instructor|admin, status defaults to pending)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Created }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden }
+  /api/v1/courses/{id}:
+    get:
+      summary: Public course detail with modules + lectures
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Course detail }
+        '404': { description: Not found }
+    put:
+      summary: Update own course (owner or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Updated }
+        '403': { description: Not the owner }
+        '404': { description: Not found }
+  /api/v1/courses/{id}/modules:
+    post:
+      summary: Add module to own course
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Created }
+        '403': { description: Not the owner }
+  /api/v1/courses/modules/{id}/lectures:
+    post:
+      summary: Add lecture to own module
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Created }
+        '403': { description: Not the owner }
+  /api/v1/courses/{id}/enroll:
+    post:
+      summary: Enroll in a published course (student|admin; 409 on duplicate; 403 when not published)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Enrolled }
+        '401': { description: Unauthorized }
+        '403': { description: Not published or wrong role }
+        '404': { description: Course not found }
+        '409': { description: Already enrolled }
+  /api/v1/enrollments/me:
+    get:
+      summary: List my enrollments with progress_percent
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: My enrollments }
+        '401': { description: Unauthorized }
+  /api/v1/lectures/{id}/progress:
+    post:
+      summary: Upsert lecture progress (enrolled students; recomputes course progress; may issue certificate)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                watchedSeconds: { type: integer, minimum: 0 }
+                completed: { type: boolean }
+      responses:
+        '200': { description: Progress saved }
+        '401': { description: Unauthorized }
+        '403': { description: Enrollment required }
+        '404': { description: Lecture not found }
+  /api/v1/lectures/{id}/notes:
+    post:
+      summary: Create a private note on a lecture (enrolled students)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Note created }
+        '403': { description: Enrollment required }
+    get:
+      summary: List my notes for a lecture
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: My notes }
+  /api/v1/lectures/{id}/bookmarks:
+    post:
+      summary: Create a private bookmark on a lecture (enrolled students)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Bookmark created }
+        '403': { description: Enrollment required }
+        '409': { description: Duplicate timestamp }
+    get:
+      summary: List my bookmarks for a lecture
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: My bookmarks }
+  /api/v1/assignments:
+    post:
+      summary: Create assignment on own course (instructor|admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Assignment created }
+        '403': { description: Not the owner }
+        '404': { description: Course not found }
+  /api/v1/assignments/{id}:
+    put:
+      summary: Update own assignment (owner or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Updated }
+        '403': { description: Not the owner }
+        '404': { description: Not found }
+    get:
+      summary: Get a single assignment (owner, enrolled student, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Assignment }
+        '403': { description: Enrollment required }
+        '404': { description: Assignment not found }
+  /api/v1/assignments/{id}/submit:
+    post:
+      summary: Submit assignment (enrolled students; deadline enforced; stores provider-agnostic storage metadata)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Submitted with storage metadata }
+        '403': { description: Enrollment required or deadline passed }
+        '404': { description: Assignment not found }
+        '409': { description: Already submitted }
+  /api/v1/courses/{id}/assignments:
+    get:
+      summary: List assignments for a course (owner instructor, enrolled student, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Assignments }
+        '401': { description: Unauthorized }
+        '403': { description: Enrollment required }
+        '404': { description: Course not found }
+  /api/v1/assignments/{id}/my-submission:
+    get:
+      summary: Get my own submission for an assignment (enrolled student/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Own submission }
+        '403': { description: Enrollment required }
+        '404': { description: Assignment or submission not found }
+  /api/v1/assignments/{id}/submissions:
+    get:
+      summary: List submissions for an assignment (assignment/course owner or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Submissions }
+        '403': { description: Not the owner }
+        '404': { description: Assignment not found }
+  /api/v1/courses/{id}/quizzes:
+    get:
+      summary: List quizzes for a course without correct answers (owner, enrolled student, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Quizzes }
+        '403': { description: Enrollment required }
+        '404': { description: Course not found }
+  /api/v1/quizzes/{id}:
+    get:
+      summary: Get quiz detail; owners/admins see is_correct, students do not
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Quiz detail }
+        '403': { description: Enrollment required }
+        '404': { description: Quiz not found }
+  /api/v1/submissions/{id}/grade:
+    put:
+      summary: Grade a submission (assignment/course owner or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Graded }
+        '403': { description: Not the owner }
+        '404': { description: Not found }
+  /api/v1/quizzes:
+    post:
+      summary: Create quiz with mcq/multi_select/short_answer questions (owner or admin; is_ai_generated stays false)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Quiz created }
+        '403': { description: Not the owner }
+  /api/v1/quizzes/{id}/attempt:
+    post:
+      summary: Start a quiz attempt (enrolled students)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Attempt started }
+        '403': { description: Enrollment required }
+        '404': { description: Quiz not found }
+  /api/v1/attempts/{id}/submit:
+    post:
+      summary: Submit answers; objective types auto-graded; short_answer leaves attempt submitted
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Scored attempt }
+        '403': { description: Not the attempt owner }
+        '404': { description: Attempt not found }
+        '409': { description: Already submitted }
+  /api/v1/certificates/me:
+    get:
+      summary: List my certificates
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: My certificates }
+  /api/v1/certificates/{id}/download:
+    get:
+      summary: Download my certificate PDF (owner or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: PDF bytes }
+        '403': { description: Not the owner }
+        '404': { description: Not found }
+  /api/v1/gamification/me:
+    get:
+      summary: My badges + streak
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Badges and streak }
+  /api/v1/gamification/leaderboard:
+    get:
+      summary: Public streak leaderboard (Phase 7; Redis-cached 60s, x-cache HIT/MISS; names + streak + badge counts only, no PII)
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        '200': { description: Leaderboard rows }
+        '429': { description: Rate limited }
+  /api/v1/courses/{id}/analytics:
+    get:
+      summary: Instructor analytics foundation (per-lecture drop-off, quiz averages, time-on-task)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Analytics }
+        '403': { description: Not the owner }
+  /api/v1/courses/{id}/status:
+    patch:
+      summary: Admin-only course status transition (test/support hook; enrollment requires published)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Status updated }
+        '403': { description: Admin only }
+  /api/v1/ai/chat/sessions:
+    post:
+      summary: Create a course-scoped AI chat session (enrolled student, owner instructor, or admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courseId]
+              properties:
+                courseId: { type: string, format: uuid }
+                mode: { type: string, enum: [beginner, intermediate, advanced], default: beginner }
+      responses:
+        '201': { description: Session created }
+        '403': { description: Enrollment required }
+        '404': { description: Course not found }
+  /api/v1/ai/chat/sessions/{id}/mode:
+    put:
+      summary: Switch explanation mode (session owner or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Mode updated }
+        '403': { description: Not the owner }
+        '404': { description: Session not found }
+  /api/v1/ai/chat/sessions/{id}/messages:
+    post:
+      summary: Grounded chat turn; retrieval filtered by course_id; citations returned; no-context yields explicit limitation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Answer with sources }
+        '403': { description: Not the owner or enrollment required }
+        '404': { description: Session not found }
+    get:
+      summary: List messages in own session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Messages }
+  /api/v1/ai/lectures/{id}/transcript:
+    post:
+      summary: Ingest lecture transcript (owner instructor/admin); chunks + embeds into document_chunks
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Transcript indexed }
+        '403': { description: Not the owner }
+  /api/v1/ai/lectures/{id}/summarize:
+    post:
+      summary: Structured key-point summary (enrolled student, owner, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Summary }
+        '403': { description: Enrollment required }
+        '404': { description: Lecture or transcript not found }
+  /api/v1/ai/lectures/{id}/generate-quiz:
+    post:
+      summary: Generate 5-10 draft questions; output stays pending_review, never an active quiz
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Draft created }
+        '403': { description: Not the owner }
+  /api/v1/ai/quiz-drafts:
+    get:
+      summary: List AI quiz drafts visible to the caller (owner instructor/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Drafts }
+  /api/v1/ai/quiz-drafts/{id}/approve:
+    post:
+      summary: Approve a pending draft into a real quiz (is_ai_generated=true); owner/admin only
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Draft approved }
+        '403': { description: Not the owner }
+        '409': { description: Draft not pending }
+  /api/v1/ai/quiz-drafts/{id}/reject:
+    post:
+      summary: Reject a pending draft; owner/admin only
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Draft rejected }
+  /api/v1/ai/modules/{id}/flashcards:
+    post:
+      summary: Generate Q/A flashcards for a module (enrolled student, owner, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Flashcards created }
+        '403': { description: Enrollment required }
+  /api/v1/ai/study-plan:
+    post:
+      summary: Generate a structured study plan from quiz-score history (student/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Study plan stored }
+        '403': { description: Enrollment required }
+  /api/v1/ai/mastery/{courseId}:
+    get:
+      summary: Deterministic per-course mastery level (advanced>=0.85, intermediate>=0.60, else beginner)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Mastery }
+  /api/v1/recommendations/me:
+    get:
+      summary: Rule-based recommendations scoped to the caller (continue/review/next)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Recommendations }
+  /api/v1/courses/{id}/ai-status:
+    get:
+      summary: Instructor AI status (chunk count, draft counts, embedding dim, service wiring)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: AI status }
+  /api/v1/admin/users:
+    get:
+      summary: List/search users (admin only; supports q + role + pagination)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20 } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: role, in: query, schema: { type: string, enum: [student, instructor, admin] } }
+      responses:
+        '200': { description: Paginated users with roles }
+        '401': { description: Unauthorized }
+        '403': { description: Admin only }
+  /api/v1/admin/users/{id}/role:
+    put:
+      summary: Assign/revoke a role (admin only; cannot revoke own admin; cannot revoke last admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Updated roles }
+        '403': { description: Admin only or self-revoke }
+        '404': { description: User not found }
+        '409': { description: Last admin }
+  /api/v1/admin/users/{id}/suspend:
+    put:
+      summary: Suspend/restore a user (admin only; suspends revoke refresh tokens and block login)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Suspension updated }
+        '403': { description: Admin only or self-suspend }
+        '404': { description: User not found }
+  /api/v1/admin/users/{id}:
+    delete:
+      summary: Delete a user (admin only; blocked for self, last admin, and course owners)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+        '403': { description: Admin only or self-delete }
+        '404': { description: User not found }
+        '409': { description: Last admin or owns courses }
+  /api/v1/admin/courses/pending:
+    get:
+      summary: Pending course approval queue (admin only; uses the existing course status model)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Pending courses }
+        '403': { description: Admin only }
+  /api/v1/admin/courses/{id}/approve:
+    post:
+      summary: Approve a course (pending → published) with approval record + instructor notification
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Approved course }
+        '403': { description: Admin only }
+        '404': { description: Course not found }
+  /api/v1/admin/courses/{id}/reject:
+    post:
+      summary: Reject a course (pending → rejected) with approval record + instructor notification
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Rejected course }
+        '403': { description: Admin only }
+        '404': { description: Course not found }
+  /api/v1/admin/courses/{id}/decision:
+    post:
+      summary: 'Unified approve/reject decision ({decision: approved|rejected, comment})'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Decided course }
+        '403': { description: Admin only }
+        '404': { description: Course not found }
+  /api/v1/admin/courses/{id}/approvals:
+    get:
+      summary: Approval history for a course (reviewer, decision, comment, timestamps)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Approval records }
+        '404': { description: Course not found }
+  /api/v1/admin/analytics/overview:
+    get:
+      summary: Platform analytics from real data (users, enrollments, completion rate, DAU estimate; revenue aggregates completed payments — zero when none recorded)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Analytics overview }
+        '403': { description: Admin only }
+  /api/v1/admin/moderation/flagged-posts:
+    get:
+      summary: Flagged forum posts queue (admin, platform-wide)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Flagged posts }
+        '403': { description: Admin only }
+  /api/v1/admin/moderation/posts/{postId}:
+    put:
+      summary: Moderate a flagged post (resolve|dismiss|hide|unhide|delete)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: postId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Moderated }
+        '403': { description: Admin only }
+        '404': { description: Post not found }
+  /api/v1/courses/{courseId}/discussions/threads:
+    get:
+      summary: List discussion threads for a course (enrolled student, owner instructor, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Threads }
+        '403': { description: Enrollment required }
+        '404': { description: Course not found }
+    post:
+      summary: Create a thread (first post embedded)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Thread created }
+        '403': { description: Enrollment required }
+  /api/v1/discussions/threads/{threadId}:
+    get:
+      summary: Thread view with posts (course isolation enforced server-side)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: threadId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Thread + posts }
+        '403': { description: Enrollment required }
+        '404': { description: Thread not found }
+  /api/v1/discussions/threads/{threadId}/posts:
+    post:
+      summary: Reply in a thread (optional parentPostId for nesting)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: threadId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Post created }
+        '403': { description: Enrollment required }
+        '404': { description: Thread not found }
+  /api/v1/discussions/posts/{postId}:
+    put:
+      summary: 'Edit own post (IDOR: author or admin only)'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: postId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Updated }
+        '403': { description: Not the author }
+        '404': { description: Post not found }
+    delete:
+      summary: Delete a post (author, course-owner instructor, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: postId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+        '403': { description: Not authorized }
+        '404': { description: Post not found }
+  /api/v1/discussions/posts/{postId}/flag:
+    post:
+      summary: Flag/report a post (one flag per reporter)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: postId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Flagged }
+        '403': { description: Enrollment required or already flagged }
+        '404': { description: Post not found }
+  /api/v1/discussions/posts/{postId}/moderate:
+    put:
+      summary: Instructor moderation within own course (hide|unhide|delete; admins platform-wide)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: postId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Moderated }
+        '403': { description: Not the course instructor }
+        '404': { description: Post not found }
+  /api/v1/courses/{courseId}/announcements:
+    get:
+      summary: List announcements (enrolled student, owner instructor, or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Announcements }
+        '403': { description: Enrollment required }
+        '404': { description: Course not found }
+    post:
+      summary: Publish an announcement (own course instructor or admin; notifies enrolled students)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: courseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Announcement created }
+        '403': { description: Not the course owner }
+        '404': { description: Course not found }
+  /api/v1/notifications/me:
+    get:
+      summary: List my notifications (user_id always from JWT; never another user's)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: My notifications }
+        '401': { description: Unauthorized }
+  /api/v1/notifications/unread-count:
+    get:
+      summary: My unread notification count
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Unread count }
+  /api/v1/notifications/read-all:
+    put:
+      summary: Mark all my notifications read
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Updated count }
+  /api/v1/notifications/{id}/read:
+    put:
+      summary: Mark one notification read (owner only; cross-user reads 404)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Updated }
+        '404': { description: Not found }
+  /api/v1/notifications/email-status:
+    get:
+      summary: Email provider availability probe (never fabricates delivery)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Provider status }
+  /api/v1/notifications/test-email:
+    post:
+      summary: Exercise the email abstraction (mocked transport in tests; no real email)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Delivery report }
+  /api/v1/assignments/{id}/upload:
+    post:
+      summary: Binary assignment upload (multipart file field; PDF/ZIP/code-text with magic-byte checks; bytes to object storage, metadata in Postgres)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Submitted with storage backend metadata }
+        '400': { description: Missing file, type not accepted, or over size limit }
+        '403': { description: Enrollment required or deadline passed }
+        '404': { description: Assignment not found }
+        '409': { description: Already submitted }
+  /api/v1/submissions/{id}/download:
+    get:
+      summary: Download a submission's file (owning student, assignment/course owner, or admin; objects stay private)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: File bytes }
+        '403': { description: Not authorized }
+        '404': { description: Submission or file not found }
+  /api/v1/lectures/{id}/upload-url:
+    post:
+      summary: Mint a presigned PUT for a lecture video asset (own course instructor or admin; stores video_key)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Upload target with presigned URL }
+        '403': { description: Not the course owner }
+        '404': { description: Lecture not found }
+  /api/v1/lectures/{id}/video-url:
+    get:
+      summary: Access-checked signed playback URL (enrolled/owner/admin; honest unavailable state without storage backend; production HLS/CDN out of scope)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Signed URL or unavailable state }
+        '403': { description: Enrollment required }
+        '404': { description: Lecture not found or no video attached }
+  /api/v1/courses/{id}/reviews:
+    get:
+      summary: Public review list with real aggregate (avg_rating, rating_count)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Reviews + aggregate }
+        '404': { description: Course not found }
+    post:
+      summary: Submit/update my review (enrolled student, owner, or admin; one per student per course)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201': { description: Review saved }
+        '400': { description: Rating out of range }
+        '403': { description: Enrollment required }
+        '404': { description: Course not found }
+  /api/v1/admin/payments:
+    get:
+      summary: List payment records (admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Payments }
+        '403': { description: Admin only }
+    post:
+      summary: Record a payment (admin only; real ingress for revenue analytics; no gateway)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Payment recorded }
+        '403': { description: Admin only }
+        '404': { description: User or course not found }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

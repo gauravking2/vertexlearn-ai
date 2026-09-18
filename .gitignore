@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.local
+.env.ci
+*.log
+.DS_Store
+pgdata/
+redisdata/
+miniodata/
+storage-local/
+test-results/
+playwright-report/
+# Python (ai-service)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# Local agent scratch
+.commandcode/

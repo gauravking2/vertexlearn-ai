@@ -1,0 +1,4 @@
+[tool.poetry]
+name = "vertexlearn-ai-service"
+version = "0.1.0"
+description = "VertexLearn AI service scaffolding (RAG in later phase)"

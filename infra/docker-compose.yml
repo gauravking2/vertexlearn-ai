@@ -1,0 +1,176 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: vertexlearn-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vertexlearn}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-vertexlearn}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: vertexlearn-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
+    # NOTE: REDIS_PASSWORD must also exist INSIDE the container, otherwise
+    # the healthcheck below authenticates with an empty password and the
+    # service is wrongly reported unhealthy.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    # NOTE: quay.io mirror of the official MinIO builds (same pinned
+    # versions). Docker Hub `minio/*` is unreachable from this environment
+    # (registry returns "pull access denied"); Quay serves the identical
+    # official releases.
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: vertexlearn-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot bucket bootstrap: private buckets for videos, materials,
+  # submissions, and certificates. Objects stay private; the backend issues
+  # short-lived presigned URLs after authorization checks.
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: vertexlearn-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" &&
+        mc mb --ignore-existing local/${STORAGE_BUCKET_VIDEOS:-videos} &&
+        mc mb --ignore-existing local/${STORAGE_BUCKET_MATERIALS:-materials} &&
+        mc mb --ignore-existing local/${STORAGE_BUCKET_SUBMISSIONS:-submissions} &&
+        mc mb --ignore-existing local/${STORAGE_BUCKET_CERTIFICATES:-certificates}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      STORAGE_BUCKET_VIDEOS: ${STORAGE_BUCKET_VIDEOS:-videos}
+      STORAGE_BUCKET_MATERIALS: ${STORAGE_BUCKET_MATERIALS:-materials}
+      STORAGE_BUCKET_SUBMISSIONS: ${STORAGE_BUCKET_SUBMISSIONS:-submissions}
+      STORAGE_BUCKET_CERTIFICATES: ${STORAGE_BUCKET_CERTIFICATES:-certificates}
+
+  ai-service:
+    build:
+      context: ../ai-service
+      dockerfile: Dockerfile
+    container_name: vertexlearn-ai-service
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      AI_SERVICE_PORT: 8000
+      # NOTE: the AI service reads the shared document_chunks table directly
+      # (PostgresChunkStore). env_file ../.env carries a localhost DATABASE_URL
+      # for host tooling, so it must be overridden here with the in-network
+      # address — otherwise chat/flashcards 500 trying localhost:5432.
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-vertexlearn}
+    ports:
+      - "${AI_SERVICE_PORT:-8000}:8000"
+    healthcheck:
+      # python:3.11-slim has no curl; use the interpreter itself.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: vertexlearn-backend
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-vertexlearn}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
+      API_PORT: 4000
+      # Server-side object-storage endpoint (backend → MinIO) plus the
+      # browser-facing endpoint used ONLY for signing presigned URLs.
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_PUBLIC_ENDPOINT: http://localhost:9000
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      STORAGE_BUCKET_VIDEOS: ${STORAGE_BUCKET_VIDEOS:-videos}
+      STORAGE_BUCKET_MATERIALS: ${STORAGE_BUCKET_MATERIALS:-materials}
+      STORAGE_BUCKET_SUBMISSIONS: ${STORAGE_BUCKET_SUBMISSIONS:-submissions}
+      STORAGE_BUCKET_CERTIFICATES: ${STORAGE_BUCKET_CERTIFICATES:-certificates}
+      AI_SERVICE_URL: http://ai-service:8000
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      ai-service:
+        condition: service_started
+    # NOTE: the production image prunes devDependencies (no tsx at runtime),
+    # so migrations run from compiled output via `migrate:prod`.
+    command: ["sh", "-c", "npm run migrate:prod && npm start"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:4000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:4000
+    container_name: vertexlearn-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

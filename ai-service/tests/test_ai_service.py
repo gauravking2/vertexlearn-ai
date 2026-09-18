@@ -1,0 +1,227 @@
+"""Pytest suite for the AI service: startup, chunking, embeddings, retrieval isolation."""
+
+import sys
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.core.config import reset_settings  # noqa: E402
+from app.core.llm import MockLlmClient, set_llm_client  # noqa: E402
+from app.main import create_app  # noqa: E402
+from app.rag.chunking import chunk_text  # noqa: E402
+from app.rag.embeddings import MockEmbeddingClient, cosine, deterministic_embedding, set_embedding_client  # noqa: E402
+from app.rag.retriever import StoredChunk, assert_no_cross_course, has_support, retrieve_course_chunks  # noqa: E402
+from app.recommendation import build_study_plan, mastery_level  # noqa: E402
+from app.store import MemoryChunkStore, set_store  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _mocked_providers(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("AI_SERVICE_TOKEN", "")
+    reset_settings()
+    set_llm_client(MockLlmClient())
+    set_embedding_client(MockEmbeddingClient(dim=32))
+    store = MemoryChunkStore()
+    set_store(store)
+    yield
+    reset_settings()
+    set_llm_client(None)
+    set_embedding_client(None)
+    set_store(MemoryChunkStore())
+
+
+def _chunk(course: str, text: str, lecture: str = "L1", idx: int = 0) -> StoredChunk:
+    return StoredChunk(
+        id=f"{course}-{idx}",
+        course_id=course,
+        lecture_id=f"lec-{course}",
+        lecture_title=lecture,
+        chunk_index=idx,
+        text=text,
+        embedding=deterministic_embedding(text, 32),
+    )
+
+
+def test_startup_health():
+    client = TestClient(create_app())
+    res = client.get("/health")
+    assert res.status_code == 200
+    assert res.json()["status"] == "ok"
+
+
+def test_chunking_overlap_and_sentence_awareness():
+    text = "First sentence here. Second sentence follows. " * 60
+    chunks = chunk_text(text, size=100, overlap=20)
+    assert len(chunks) >= 2
+    assert all(len(c.text) <= 100 or c.text.count(".") >= 1 for c in chunks)
+    assert chunks[1].text[:10] in chunks[0].text or len(chunks[0].text) <= 100
+
+
+def test_chunking_empty():
+    assert chunk_text("   ") == []
+
+
+def test_embedding_abstraction_dim_and_determinism():
+    client = MockEmbeddingClient(dim=32)
+    a = client.embed(["hello world"])[0]
+    b = client.embed(["hello world"])[0]
+    assert len(a) == 32
+    assert a == b
+    assert cosine(a, b) == pytest.approx(1.0)
+
+
+def test_retrieval_prefers_relevant_chunk():
+    rows = [
+        _chunk("A", "photosynthesis converts sunlight in chloroplasts", idx=0),
+        _chunk("A", "unrelated algebra equations balance both sides", idx=1),
+    ]
+    results = retrieve_course_chunks("A", "what is photosynthesis", rows, top_k=2)
+    assert results[0].chunk.chunk_index == 0
+
+
+def test_course_filtering_drops_foreign_rows():
+    rows = [_chunk("A", "alpha material", idx=0), _chunk("B", "beta material", idx=1)]
+    results = retrieve_course_chunks("A", "material", rows, top_k=5)
+    assert all(r.chunk.course_id == "A" for r in results)
+    assert_no_cross_course(results, "A")
+
+
+def test_cross_course_leakage_assertion():
+    foreign = _chunk("B", "beta secrets", idx=0)
+    scored = [type("S", (), {"chunk": foreign, "score": 1.0})()]
+    with pytest.raises(AssertionError):
+        assert_no_cross_course(scored, "A")
+
+
+def test_no_context_behavior():
+    results = retrieve_course_chunks("A", "anything", [], top_k=5)
+    assert results == []
+    assert has_support(results) is False
+
+
+def test_chat_endpoint_course_isolation_and_citations():
+    store = MemoryChunkStore()
+    store.seed(
+        [
+            {"id": "a1", "course_id": "A", "lecture_id": "lecA", "lecture_title": "Alpha", "chunk_index": 0, "text": "photosynthesis releases oxygen", "embedding": deterministic_embedding("photosynthesis releases oxygen", 32)},
+            {"id": "b1", "course_id": "B", "lecture_id": "lecB", "lecture_title": "Beta", "chunk_index": 0, "text": "quantum tunneling semiconductors", "embedding": deterministic_embedding("quantum tunneling semiconductors", 32)},
+        ]
+    )
+    set_store(store)
+    client = TestClient(create_app())
+    res = client.post("/v1/chat/answer", json={"course_id": "A", "question": "photosynthesis releases what", "mode": "beginner"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["grounded"] is True
+    assert all(s["lecture_id"] != "lecB" for s in body["sources"])
+
+
+def test_chat_endpoint_no_context_grounded_limitation():
+    set_store(MemoryChunkStore())
+    client = TestClient(create_app())
+    res = client.post("/v1/chat/answer", json={"course_id": "A", "question": "quantum chromodynamics", "mode": "beginner"})
+    assert res.status_code == 200
+    assert res.json()["grounded"] is False
+    assert "could not find" in res.json()["answer"].lower()
+
+
+def test_chat_rejects_missing_course():
+    client = TestClient(create_app())
+    res = client.post("/v1/chat/answer", json={"course_id": "", "question": "hi"})
+    assert res.status_code in (400, 422)
+
+
+def test_mode_validation():
+    client = TestClient(create_app())
+    res = client.post("/v1/chat/answer", json={"course_id": "A", "question": "hi", "mode": "expert"})
+    assert res.status_code == 422
+
+
+def test_summarization_endpoint():
+    client = TestClient(create_app())
+    res = client.post("/v1/summarize", json={"lecture_id": "L1", "transcript": "Water evaporates. Clouds form. Rain falls. Oceans collect water."})
+    assert res.status_code == 200
+    assert len(res.json()["summary"]["keyPoints"]) >= 1
+
+
+def test_quiz_gen_count_bounds_and_review_state():
+    client = TestClient(create_app())
+    good = client.post("/v1/quiz-gen", json={"lecture_id": "L1", "transcript": "Gravity pulls. Mass matters. Orbits balance. Weight varies. " * 20, "count": 6})
+    assert good.status_code == 200
+    assert good.json()["status"] == "pending_review"
+    assert len(good.json()["questions"]) == 6
+    bad = client.post("/v1/quiz-gen", json={"lecture_id": "L1", "transcript": "short", "count": 3})
+    assert bad.status_code == 422
+
+
+def test_flashcards_endpoint():
+    store = MemoryChunkStore()
+    store.seed([{"id": "1", "course_id": "A", "text": "heart pumps blood through arteries"}])
+    set_store(store)
+    client = TestClient(create_app())
+    res = client.post("/v1/flashcards", json={"module_id": "M1"})
+    assert res.status_code == 200
+    assert len(res.json()["flashcards"]) >= 1
+
+
+def test_study_plan_endpoint_and_mastery():
+    client = TestClient(create_app())
+    res = client.post("/v1/study-plan", json={"course_id": "C1", "quiz_ratio": 0.4, "weak_topics": ["Algebra"], "mastery": "beginner"})
+    assert res.status_code == 200
+    assert len(res.json()["weeks"]) == 3
+    assert mastery_level(0.9) == "advanced"
+    assert mastery_level(0.7) == "intermediate"
+    assert mastery_level(0.2) == "beginner"
+    assert mastery_level(None) == "beginner"
+    plan = build_study_plan("C1", 0.2, ["Algebra"], "beginner")
+    assert plan["weeks"][0]["focus"] == "Algebra"
+
+
+def test_recommendation_mastery_thresholds():
+    assert mastery_level(0.85) == "advanced"
+    assert mastery_level(0.6) == "intermediate"
+    assert mastery_level(None, 0.9) == "intermediate"
+
+
+def test_empty_env_falls_back_to_provider_defaults(monkeypatch):
+    """Regression: set-but-empty LLM_BASE_URL/MODEL must not win over defaults.
+
+    Live verification hit `ValueError: unknown url type: '/v1/messages'`
+    because an empty LLM_BASE_URL produced a relative URL.
+    """
+    from app.core.config import Settings
+
+    monkeypatch.setenv("LLM_BASE_URL", "")
+    monkeypatch.setenv("LLM_CHAT_MODEL", "")
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("EMBEDDING_MODEL", "")
+    monkeypatch.setenv("EMBEDDING_BASE_URL", "")
+    s = Settings()
+    assert s.llm_base_url == "https://api.anthropic.com"
+    assert s.llm_chat_model == "claude-3-5-sonnet-latest"
+    assert s.llm_provider == "anthropic"
+    assert s.embedding_model == "voyage-3-lite"
+    assert s.embedding_base_url == "https://api.voyageai.com"
+
+
+def test_llm_key_is_not_reused_as_embedding_key(monkeypatch):
+    """Regression: with only an Anthropic key set, embeddings stay deterministic.
+
+    Live verification showed the LLM-key fallback hitting Voyage with the
+    wrong credential (HTTP 401) and breaking retrieval. No EMBEDDING_API_KEY
+    must mean no embedding HTTP attempts.
+    """
+    from app.core.config import Settings
+    from app.rag.embeddings import AnthropicEmbeddingClient, deterministic_embedding
+
+    monkeypatch.setenv("LLM_API_KEY", "sk-ant-test-not-real")
+    monkeypatch.delenv("EMBEDDING_API_KEY", raising=False)
+    s = Settings()
+    assert s.embedding_api_key == ""
+    client = AnthropicEmbeddingClient(s.embedding_dim)
+    assert client.embed(["hello world"]) == [deterministic_embedding("hello world", s.embedding_dim)]
