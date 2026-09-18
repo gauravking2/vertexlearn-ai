@@ -4,6 +4,7 @@ import { adminService } from '@/services/adminService';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { getApiErrorMessage } from '@/components/common/apiError';
 
 export const UserManagement = () => {
   const [q, setQ] = useState('');
@@ -12,7 +13,7 @@ export const UserManagement = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error: queryError, refetch } = useQuery({
     queryKey: ['admin-users', search],
     queryFn: () => adminService.listUsers({ q: search || undefined, pageSize: 50 }),
   });
@@ -54,7 +55,8 @@ export const UserManagement = () => {
   if (isError) {
     return (
       <Card>
-        <p className="text-center text-red-600 py-8">Failed to load users. Admin access required.</p>
+        <p className="text-center text-red-600 py-8">Failed to load users ({getApiErrorMessage(queryError)}).</p>
+        <div className="text-center pb-6"><Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button></div>
       </Card>
     );
   }

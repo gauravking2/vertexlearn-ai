@@ -21,6 +21,8 @@ export function getApiErrorMessage(error: unknown): string {
         return backendMessage ?? 'The requested item was not found.';
       case 409:
         return backendMessage ?? 'This action conflicts with the current state.';
+      case 429:
+        return 'Too many requests — please wait a moment and retry.';
       default:
         if (status >= 500) return 'Server error — please try again in a moment.';
         return backendMessage ?? 'Something went wrong. Please try again.';

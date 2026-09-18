@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VertexLearn AI</title>
+    <script>
+      // Pre-paint theme: apply persisted/system dark mode before first paint
+      // to avoid a light flash for dark users. Mirrors themeStore logic.
+      try {
+        var s = JSON.parse(localStorage.getItem('theme-storage') || '{}');
+        var m = (s.state && s.state.mode) || 'system';
+        if (m === 'dark' || (m === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

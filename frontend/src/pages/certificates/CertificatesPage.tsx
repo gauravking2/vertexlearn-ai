@@ -26,7 +26,8 @@ export const CertificatesPage = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // Revoking synchronously aborts the download in Chromium — defer it.
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 4000);
     } catch {
       setDownloadError('Could not download certificate. Please try again.');
     } finally {
@@ -74,10 +75,10 @@ export const CertificatesPage = () => {
                 </div>
                 <div>
                   <h3 className="text-lg font-serif text-[#1F2421] mb-1">
-                    {cert.course?.title || 'Certificate'}
+                    {(cert as any).courseTitle || cert.course?.title || 'Certificate'}
                   </h3>
                   <p className="text-sm text-[#5C635D]">
-                    Issued {new Date(cert.issuedAt).toLocaleDateString()}
+                    Issued {cert.issuedAt ? new Date(cert.issuedAt).toLocaleDateString() : 'recently'}
                   </p>
                   {cert.certificateCode && (
                     <p className="text-xs text-[#5C635D] mt-1">Code: {cert.certificateCode}</p>

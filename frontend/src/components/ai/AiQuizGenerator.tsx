@@ -54,8 +54,9 @@ export const AiQuizGenerator = ({
       </p>
       <form onSubmit={handleGenerate} className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-sm font-medium text-[#1F2421] mb-1.5">Lecture</label>
+          <label className="block text-sm font-medium text-[#1F2421] mb-1.5" htmlFor="ai-quiz-lecture">Lecture</label>
           <select
+            id="ai-quiz-lecture"
             value={lectureId}
             onChange={(e) => setLectureId(e.target.value)}
             className="w-full px-4 py-2.5 border border-[#E7E1D7] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4612F]"

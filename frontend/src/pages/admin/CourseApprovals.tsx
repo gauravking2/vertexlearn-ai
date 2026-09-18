@@ -4,13 +4,14 @@ import { adminService } from '@/services/adminService';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { getApiErrorMessage } from '@/components/common/apiError';
 
 export const CourseApprovals = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error: queryError, refetch } = useQuery({
     queryKey: ['admin-pending'],
     queryFn: () => adminService.pendingCourses({ pageSize: 50 }),
   });
@@ -29,7 +30,10 @@ export const CourseApprovals = () => {
   if (isLoading) return <LoadingSpinner text="Loading approval queue..." />;
   if (isError) {
     return (
-      <Card><p className="text-center text-red-600 py-8">Failed to load pending courses. Admin access required.</p></Card>
+      <Card>
+        <p className="text-center text-red-600 py-8">Failed to load pending courses ({getApiErrorMessage(queryError)}).</p>
+        <div className="text-center pb-6"><Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button></div>
+      </Card>
     );
   }
 

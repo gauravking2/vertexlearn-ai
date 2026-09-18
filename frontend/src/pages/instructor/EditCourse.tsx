@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { Input } from '@/components/common/Input';
 import { getApiErrorMessage } from '@/components/common/apiError';
 import { LectureAssetUpload } from '@/components/instructor/LectureAssetUpload';
+import { LectureTranscriptEditor } from '@/components/instructor/LectureTranscriptEditor';
 import { ArrowLeft, Plus, Layers, PlaySquare } from 'lucide-react';
 
 export const EditCourse = () => {
@@ -134,8 +135,9 @@ export const EditCourse = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} />
           <div>
-            <label className="block text-sm font-medium text-[#1F2421] mb-1.5">Description</label>
+            <label className="block text-sm font-medium text-[#1F2421] mb-1.5" htmlFor="course-description">Description</label>
             <textarea
+              id="course-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full px-4 py-2.5 border border-[#E7E1D7] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4612F] resize-none"
@@ -204,6 +206,7 @@ export const EditCourse = () => {
                             <PlaySquare size={13} className="text-[#C4612F]" /> {l.title}
                           </span>
                           <LectureAssetUpload lectureId={l.id} lectureTitle={l.title} />
+                          <LectureTranscriptEditor lectureId={l.id} lectureTitle={l.title} />
                         </li>
                       ))}
                     </ul>

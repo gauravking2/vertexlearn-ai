@@ -180,10 +180,10 @@ export const QuizManagement = () => {
                 <div>
                   <p className="text-sm font-medium text-[#1F2421]">{q.title}</p>
                   <p className="text-xs text-[#5C635D]">
-                    {q.question_count ?? 0} questions{q.is_ai_generated ? ' · AI-generated' : ''}
+                    {q.questionCount ?? 0} questions{q.isAiGenerated ? ' · AI-generated' : ''}
                   </p>
                 </div>
-                {q.is_ai_generated && <Badge variant="primary">AI</Badge>}
+                {q.isAiGenerated && <Badge variant="primary">AI</Badge>}
               </li>
             ))}
           </ul>

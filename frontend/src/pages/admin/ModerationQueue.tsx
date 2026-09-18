@@ -4,11 +4,12 @@ import { adminService } from '@/services/adminService';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { getApiErrorMessage } from '@/components/common/apiError';
 
 export const ModerationQueue = () => {
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error: queryError, refetch } = useQuery({
     queryKey: ['admin-flagged'],
     queryFn: () => adminService.flaggedPosts(),
   });
@@ -26,7 +27,10 @@ export const ModerationQueue = () => {
   if (isLoading) return <LoadingSpinner text="Loading moderation queue..." />;
   if (isError) {
     return (
-      <Card><p className="text-center text-red-600 py-8">Failed to load flagged posts. Admin access required.</p></Card>
+      <Card>
+        <p className="text-center text-red-600 py-8">Failed to load flagged posts ({getApiErrorMessage(queryError)}).</p>
+        <div className="text-center pb-6"><Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button></div>
+      </Card>
     );
   }
   if (data?.unavailable) {

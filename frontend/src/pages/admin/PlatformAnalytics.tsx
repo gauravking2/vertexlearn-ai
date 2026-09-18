@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { adminService } from '@/services/adminService';
 import { Card } from '@/components/common/Card';
+import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { getApiErrorMessage } from '@/components/common/apiError';
 
 export const PlatformAnalytics = () => {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error: queryError, refetch } = useQuery({
     queryKey: ['admin-analytics-full'],
     queryFn: () => adminService.analyticsOverview(),
   });
@@ -12,7 +14,10 @@ export const PlatformAnalytics = () => {
   if (isLoading) return <LoadingSpinner text="Loading platform analytics..." />;
   if (isError || !data) {
     return (
-      <Card><p className="text-center text-red-600 py-8">Failed to load analytics. Admin access required.</p></Card>
+      <Card>
+        <p className="text-center text-red-600 py-8">Failed to load analytics ({getApiErrorMessage(queryError)}).</p>
+        <div className="text-center pb-6"><Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button></div>
+      </Card>
     );
   }
 

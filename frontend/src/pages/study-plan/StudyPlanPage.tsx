@@ -15,11 +15,13 @@ export const StudyPlanPage = () => {
 
   const handleGenerate = () => {
     if (courseId) {
-      generate(courseId, { onSuccess: (d) => setPlan(d) });
+      // Backend returns the saved row with the plan nested under `plan`.
+      generate(courseId, { onSuccess: (d: any) => setPlan(d?.plan ?? d) });
     }
   };
 
-  const weeks = plan?.weeks ?? (data as any)?.weeks ?? [];
+  const activePlan = plan ?? (data as any)?.plan ?? null;
+  const weeks = activePlan?.weeks ?? [];
 
   return (
     <div className="space-y-6">
@@ -69,10 +71,10 @@ export const StudyPlanPage = () => {
 
       {weeks.length > 0 && (
         <div className="space-y-4">
-          {(plan?.mastery || (data as any)?.mastery) && (
+          {activePlan?.mastery && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-[#5C635D]">Detected mastery:</span>
-              <Badge variant="primary">{(plan?.mastery || (data as any)?.mastery)}</Badge>
+              <Badge variant="primary">{activePlan.mastery}</Badge>
             </div>
           )}
           {weeks.map((week: any, idx: number) => (

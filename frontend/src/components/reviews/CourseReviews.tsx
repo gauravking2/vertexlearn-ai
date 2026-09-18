@@ -72,7 +72,7 @@ export const CourseReviews = ({ courseId, canReview }: { courseId: string; canRe
         <ul className="space-y-3">
           {items.map((r) => (
             <li key={r.id} className="border-b border-[#E7E1D7] last:border-b-0 pb-3 last:pb-0">
-              <p className="text-sm text-[#1F2421]">★ {r.rating} — {r.reviewer_name}</p>
+              <p className="text-sm text-[#1F2421]">★ {r.rating} — {r.reviewerName}</p>
               {r.review && <p className="text-sm text-[#5C635D]">{r.review}</p>}
             </li>
           ))}

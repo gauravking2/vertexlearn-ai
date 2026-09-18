@@ -65,13 +65,13 @@ export const AIQuizReview = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
-          AI Quiz <span className="italic text-[#C4612F]">Review</span>
-        </h1>
-        <p className="text-[#5C635D]">
-          Review AI-generated drafts. Approved drafts become active quizzes; rejected drafts are discarded.
-          Students never see pending drafts.
-        </p>
+          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
+            AI Quiz <span className="italic text-[#C4612F]">Review</span>
+          </h1>
+          <p className="text-[#5C635D]">
+            Review assistant-drafted quizzes assembled from lecture material. Approved drafts become active quizzes;
+            rejected drafts are discarded. Students never see pending drafts.
+          </p>
       </div>
 
       {/* GENERATE trigger: Lecture → Generate AI Quiz → pending_review */}

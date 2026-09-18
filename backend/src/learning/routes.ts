@@ -690,6 +690,41 @@ learningRouter.post('/attempts/:id/submit', authenticate, authorize('student', '
   }
 });
 
+/**
+ * Read a single attempt (owner student or admin). Enables result deep-links
+ * (/quiz-attempts/:id/result) and client-side attempt history without
+ * exposing other students' records. Answers include correctness only for the
+ * attempt owner (single-user read, no cross-user leak).
+ */
+learningRouter.get('/attempts/:id', authenticate, authorize('student', 'admin'), async (req, res, next) => {
+  try {
+    const attemptRes = await db.query(
+      `SELECT a.id, a.quiz_id, a.student_id, a.status, a.score, a.max_score, a.submitted_at, q.course_id, q.title AS quiz_title
+       FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id WHERE a.id = $1`,
+      [req.params.id],
+    );
+    const attempt = attemptRes.rows[0] as
+      | { id: string; quiz_id: string; student_id: string; status: string; score: number | null; max_score: number | null; submitted_at: string | null; course_id: string; quiz_title: string }
+      | undefined;
+    if (!attempt) {
+      next(notFound('Attempt not found'));
+      return;
+    }
+    if (attempt.student_id !== req.user!.id && !req.user!.roles.includes('admin')) {
+      next(forbidden('You do not own this attempt'));
+      return;
+    }
+    const answersRes = await db.query(
+      `SELECT an.question_id, qq.prompt, qq.points, an.selected_option_ids, an.answer_text, an.is_correct, an.points_earned
+       FROM quiz_answers an JOIN quiz_questions qq ON qq.id = an.question_id WHERE an.attempt_id = $1`,
+      [attempt.id],
+    );
+    res.json({ ...attempt, answers: answersRes.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
 learningRouter.get('/certificates/me', authenticate, authorize('student', 'admin'), async (req, res, next) => {
   try {
     const rows = await db.query(

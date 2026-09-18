@@ -77,4 +77,23 @@ export const adminService = {
     const response = await api.put(`/admin/moderation/posts/${postId}`, { action });
     return response.data;
   },
+
+  // Revenue / payments (real records only — manual ingress, no gateway)
+  async listPayments(limit = 50) {
+    const response = await api.get(`/admin/payments?limit=${limit}`);
+    return response.data as { data: any[] };
+  },
+
+  async recordPayment(data: {
+    userId?: string;
+    courseId?: string;
+    amountCents: number;
+    currency?: string;
+    status?: 'pending' | 'completed' | 'refunded' | 'failed';
+    provider?: string;
+    providerRef?: string;
+  }) {
+    const response = await api.post('/admin/payments', data);
+    return response.data;
+  },
 };

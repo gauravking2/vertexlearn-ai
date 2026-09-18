@@ -86,11 +86,11 @@ export const SubmissionReview = () => {
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                 <div className="flex-1">
                   <p className="font-medium text-[#1F2421]">
-                    {s.student_name ?? s.student_email ?? `Student ${String(s.student_id).slice(0, 8)}…`}
+                    {s.studentName ?? s.studentEmail ?? `Student ${String(s.studentId ?? s.id).slice(0, 8)}…`}
                   </p>
-                  <p className="text-xs text-[#5C635D]">{s.student_email}</p>
-                  <p className="text-sm text-[#5C635D]">Submitted: {new Date(s.submitted_at).toLocaleString()}</p>
-                  {s.content_text && <p className="text-sm text-[#1F2421] mt-2 bg-[#FBF9F5] rounded p-2 line-clamp-4">{s.content_text}</p>}
+                  <p className="text-xs text-[#5C635D]">{s.studentEmail}</p>
+                  <p className="text-sm text-[#5C635D]">Submitted: {s.submittedAt ? new Date(s.submittedAt).toLocaleString() : '—'}</p>
+                  {s.contentText && <p className="text-sm text-[#1F2421] mt-2 bg-[#FBF9F5] rounded p-2 line-clamp-4">{s.contentText}</p>}
                   {s.grade != null
                     ? <p className="text-sm text-[#A94E22] dark:text-[#e8a06f] mt-1">Grade: {s.grade}{s.feedback ? ` — ${s.feedback}` : ''}</p>
                     : <p className="text-sm text-[#5C635D] mt-1">Not graded yet</p>}

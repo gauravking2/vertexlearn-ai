@@ -58,6 +58,18 @@ export const useGenerateLectureSummary = () => {
   });
 };
 
+export const useIngestTranscript = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ lectureId, transcript }: { lectureId: string; transcript: string }) =>
+      aiService.ingestTranscript(lectureId, transcript),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quizDrafts'] });
+    },
+  });
+};
+
 export const useQuizDrafts = (courseId?: string) => {
   return useQuery({
     queryKey: ['quizDrafts', courseId],

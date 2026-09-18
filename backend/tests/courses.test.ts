@@ -78,6 +78,17 @@ describe('courses foundation', () => {
     expect(Array.isArray(res.body.modules)).toBe(true);
   });
 
+  test('course detail exposes the instructor display name', async () => {
+    const token = await registerAndLogin('teach-instructor-name@example.com');
+    const created = await request(app)
+      .post('/api/v1/courses')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Named Instructor Course', description: 'detail' });
+    const res = await request(app).get(`/api/v1/courses/${created.body.id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.instructor_name).toBe('teach-instructor-name@example.com');
+  });
+
   test('course detail 404s for unknown id', async () => {
     const res = await request(app).get('/api/v1/courses/00000000-0000-4000-8000-ffffffffffff');
     expect(res.status).toBe(404);

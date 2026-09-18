@@ -136,4 +136,27 @@ describe('quizzes', () => {
     const res = await request(app).post(`/api/v1/quizzes/${created.body.id}/attempt`).set('Authorization', `Bearer ${outsider.token}`).send({});
     expect(res.status).toBe(403);
   });
+
+  test('GET /attempts/:id returns owner attempt with answers; others get 403/404', async () => {
+    const s = await setupQuiz('read1');
+    const attempt = await request(app).post(`/api/v1/quizzes/${s.quizId}/attempt`).set('Authorization', `Bearer ${s.studentToken}`).send({});
+    expect(attempt.status).toBe(201);
+    const { db } = await import('../src/db/pool');
+    const opts = await db.query(`SELECT id, is_correct FROM quiz_options WHERE question_id = $1`, [s.mcqId]);
+    const correct = (opts.rows as { id: string; is_correct: boolean }[]).find((o) => o.is_correct)!.id;
+    await request(app)
+      .post(`/api/v1/attempts/${attempt.body.id}/submit`)
+      .set('Authorization', `Bearer ${s.studentToken}`)
+      .send({ answers: [{ questionId: s.mcqId, selectedOptionIds: [correct] }, { questionId: s.multiId, selectedOptionIds: [] }, { questionId: s.shortId, answerText: 'x' }] });
+    const read = await request(app).get(`/api/v1/attempts/${attempt.body.id}`).set('Authorization', `Bearer ${s.studentToken}`);
+    expect(read.status).toBe(200);
+    expect(read.body.quiz_id).toBe(s.quizId);
+    expect(Array.isArray(read.body.answers)).toBe(true);
+    expect(read.body.answers.length).toBe(3);
+    const stranger = await registerAndLogin(app, 'p2-q-stud-stranger@example.com', 'student');
+    const denied = await request(app).get(`/api/v1/attempts/${attempt.body.id}`).set('Authorization', `Bearer ${stranger.token}`);
+    expect(denied.status).toBe(403);
+    const missing = await request(app).get(`/api/v1/attempts/00000000-0000-0000-0000-000000000000`).set('Authorization', `Bearer ${s.studentToken}`);
+    expect(missing.status).toBe(404);
+  });
 });

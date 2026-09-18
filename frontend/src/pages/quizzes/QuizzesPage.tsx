@@ -46,10 +46,10 @@ export const QuizzesPage = () => {
                   <FileQuestion className="text-[#C4612F]" size={20} />
                   <h3 className="font-medium text-[#1F2421]">{quiz.title}</h3>
                 </div>
-                {quiz.is_ai_generated && <Badge variant="primary">AI</Badge>}
+                {quiz.isAiGenerated && <Badge variant="primary">AI</Badge>}
               </div>
               {quiz.description && <p className="text-sm text-[#5C635D] mb-3 line-clamp-2">{quiz.description}</p>}
-              <p className="text-xs text-[#5C635D] mb-3">{quiz.question_count ?? 0} questions</p>
+              <p className="text-xs text-[#5C635D] mb-3">{quiz.questionCount ?? 0} questions</p>
               <Button as={Link} to={`/quizzes/${quiz.id}/attempt`} fullWidth>
                 Start quiz
               </Button>

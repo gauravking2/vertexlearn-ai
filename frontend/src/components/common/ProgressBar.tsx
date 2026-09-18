@@ -1,3 +1,5 @@
+import { safePercent, displayPercent } from '@/utils/model';
+
 interface ProgressBarProps {
   progress: number; // 0-100
   height?: 'sm' | 'md' | 'lg';
@@ -15,7 +17,8 @@ export const ProgressBar = ({
     lg: 'h-4',
   };
 
-  const clampedProgress = Math.min(Math.max(progress, 0), 100);
+  // Never render NaN/Infinity widths or labels (safePercent clamps 0–100).
+  const clampedProgress = safePercent(progress);
 
   return (
     <div className="w-full">
@@ -26,7 +29,7 @@ export const ProgressBar = ({
         />
       </div>
       {showLabel && (
-        <p className="text-xs text-[#5C635D] mt-1.5 text-right">{clampedProgress}%</p>
+        <p className="text-xs text-[#5C635D] mt-1.5 text-right">{displayPercent(clampedProgress)}</p>
       )}
     </div>
   );

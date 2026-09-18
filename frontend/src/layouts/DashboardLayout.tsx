@@ -19,6 +19,11 @@ import {
   Users,
   BarChart3,
   Flag,
+  ClipboardList,
+  FileQuestion,
+  Bot,
+  Megaphone,
+  CircleDollarSign,
 } from 'lucide-react';
 
 export const DashboardLayout = () => {
@@ -33,25 +38,33 @@ export const DashboardLayout = () => {
   const studentLinks = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/courses', icon: BookOpen, label: 'Courses' },
+    { to: '/assignments', icon: ClipboardList, label: 'Assignments' },
+    { to: '/quizzes', icon: FileQuestion, label: 'Quizzes' },
+    { to: '/ai-tutor', icon: Bot, label: 'AI Tutor' },
     { to: '/certificates', icon: GraduationCap, label: 'Certificates' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },
   ];
 
   const adminLinks = [
-    { to: '/admin', icon: ShieldCheck, label: 'Admin Dashboard' },
-    { to: '/admin/users', icon: Users, label: 'Users' },
+    { to: '/admin', icon: ShieldCheck, label: 'Dashboard' },
+    { to: '/admin/users', icon: Users, label: 'Users & Roles' },
     { to: '/admin/courses/pending', icon: BookMarked, label: 'Approvals' },
-    { to: '/admin/analytics', icon: BarChart3, label: 'Analytics' },
     { to: '/admin/moderation', icon: Flag, label: 'Moderation' },
+    { to: '/admin/analytics', icon: BarChart3, label: 'Analytics' },
+    { to: '/admin/revenue', icon: CircleDollarSign, label: 'Revenue' },
     { to: '/courses', icon: BookOpen, label: 'Course Catalog' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },
   ];
 
   const instructorLinks = [
-    { to: '/instructor', icon: LayoutDashboard, label: 'Instructor Dashboard' },
-    { to: '/instructor/courses', icon: BookMarked, label: 'Manage Courses' },
+    { to: '/instructor', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/instructor/courses', icon: BookMarked, label: 'Courses' },
+    { to: '/instructor/assignments', icon: ClipboardList, label: 'Assignments' },
+    { to: '/instructor/quizzes', icon: FileQuestion, label: 'Quizzes' },
     { to: '/instructor/quiz-drafts', icon: FileText, label: 'AI Quiz Review' },
-    // Cross-links so instructors/students reach the same course-scoped
+    { to: '/instructor/analytics', icon: BarChart3, label: 'Analytics' },
+    { to: '/instructor/announcements', icon: Megaphone, label: 'Announcements' },
+    // Cross-links so instructors reach the same course-scoped
     // student surfaces (player, AI tutor) without dead ends.
     { to: '/courses', icon: BookOpen, label: 'Course Catalog' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },

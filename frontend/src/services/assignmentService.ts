@@ -1,5 +1,6 @@
 import { api } from './api';
 import { Assignment, Submission } from '@/types';
+import { normalizeAssignment, normalizeSubmission, normalizePage } from '@/utils/model';
 
 export const assignmentService = {
   // Instructor endpoints (real)
@@ -11,7 +12,7 @@ export const assignmentService = {
     maxScore?: number;
   }): Promise<Assignment> {
     const response = await api.post<Assignment>('/assignments', data);
-    return response.data;
+    return normalizeAssignment(response.data as any) as unknown as Assignment;
   },
 
   async updateAssignment(
@@ -24,7 +25,7 @@ export const assignmentService = {
     }
   ): Promise<Assignment> {
     const response = await api.put<Assignment>(`/assignments/${assignmentId}`, data);
-    return response.data;
+    return normalizeAssignment(response.data as any) as unknown as Assignment;
   },
 
   // Student endpoints (real)
@@ -38,7 +39,7 @@ export const assignmentService = {
     }
   ): Promise<Submission> {
     const response = await api.post<Submission>(`/assignments/${assignmentId}/submit`, data);
-    return response.data;
+    return normalizeSubmission(response.data as any) as unknown as Submission;
   },
 
   // Binary file upload (real): multipart/form-data, bytes to object storage,
@@ -49,7 +50,7 @@ export const assignmentService = {
     const response = await api.post<Submission>(`/assignments/${assignmentId}/upload`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return response.data;
+    return normalizeSubmission(response.data as any) as unknown as Submission;
   },
 
   // Instructor grading (real)
@@ -58,27 +59,27 @@ export const assignmentService = {
     data: { grade: number; feedback?: string }
   ): Promise<Submission> {
     const response = await api.put<Submission>(`/submissions/${submissionId}/grade`, data);
-    return response.data;
+    return normalizeSubmission(response.data as any) as unknown as Submission;
   },
 
   // List/detail endpoints (real — Phase 4B backend additions)
   async listCourseAssignments(courseId: string): Promise<{ data: Assignment[] }> {
     const response = await api.get<{ data: Assignment[] }>(`/courses/${courseId}/assignments`);
-    return response.data;
+    return { data: normalizePage(response.data, (r) => normalizeAssignment(r)).data } as unknown as { data: Assignment[] };
   },
 
   async getAssignmentById(assignmentId: string): Promise<Assignment> {
     const response = await api.get<Assignment>(`/assignments/${assignmentId}`);
-    return response.data;
+    return normalizeAssignment(response.data as any) as unknown as Assignment;
   },
 
   async getMySubmission(assignmentId: string): Promise<Submission> {
     const response = await api.get<Submission>(`/assignments/${assignmentId}/my-submission`);
-    return response.data;
+    return normalizeSubmission(response.data as any) as unknown as Submission;
   },
 
   async listAssignmentSubmissions(assignmentId: string): Promise<{ data: Submission[] }> {
     const response = await api.get<{ data: Submission[] }>(`/assignments/${assignmentId}/submissions`);
-    return response.data;
+    return { data: normalizePage(response.data, (r) => normalizeSubmission(r)).data } as unknown as { data: Submission[] };
   },
 };

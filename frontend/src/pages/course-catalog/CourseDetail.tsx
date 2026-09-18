@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useCourse, useEnrollCourse } from '@/hooks/useCourses';
 import { useEnrollments } from '@/hooks/useLearning';
@@ -8,126 +9,157 @@ import { Button } from '@/components/common/Button';
 import { MasteryCard } from '@/components/ai/MasteryCard';
 import { AnnouncementList } from '@/components/announcements/AnnouncementList';
 import { CourseReviews } from '@/components/reviews/CourseReviews';
+import { authStore } from '@/store/authStore';
+import { getApiErrorMessage } from '@/components/common/apiError';
 import { BookOpen, Clock, BarChart3, Award, PlayCircle } from 'lucide-react';
+import { categoryCover, safePercent, displayPercent, validId } from '@/utils/model';
 
 export const CourseDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: course, isLoading } = useCourse(id);
+  const { data: course, isLoading, isError, error, refetch } = useCourse(id);
   const { data: enrollments } = useEnrollments();
   const { mutate: enroll, isPending: enrolling } = useEnrollCourse();
+  const { user } = authStore();
+  const [enrollError, setEnrollError] = useState<string | null>(null);
+  const [enrollNotice, setEnrollNotice] = useState<string | null>(null);
 
   if (isLoading) {
     return <LoadingSpinner text="Loading course..." />;
   }
 
-  if (!course) {
+  if (isError) {
+    return (
+      <Card>
+        <p className="text-sm text-red-700 mb-2" role="alert">{getApiErrorMessage(error)}</p>
+        <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+      </Card>
+    );
+  }
+
+  if (!course || !validId((course as any)?.id)) {
     return (
       <Card>
         <p className="text-center text-[#5C635D] py-12">Course not found</p>
+        <div className="text-center">
+          <Button variant="outline" size="sm" as={Link} to="/courses">Back to catalog</Button>
+        </div>
       </Card>
     );
   }
 
   const handleEnroll = () => {
+    setEnrollError(null);
+    setEnrollNotice(null);
     enroll(course.id, {
       onSuccess: () => {
         navigate(`/courses/${course.id}`);
       },
+      onError: (e: any) => {
+        const status = e?.response?.status;
+        const message = getApiErrorMessage(e);
+        if (status === 409) {
+          // Already enrolled: refresh state and say so instead of breaking.
+          setEnrollNotice('You are already enrolled in this course.');
+        } else {
+          setEnrollError(message || 'Enrollment failed. Please try again.');
+        }
+      },
     });
   };
 
-  // Enrollment is derived from GET /enrollments/me (the backend course detail
-  // does not embed isEnrolled/progress/enrollmentCount).
-  const enrollment = enrollments?.data?.find((e) => e.courseId === course.id);
+  // Enrollment is derived from GET /enrollments/me (normalized camelCase).
+  const enrollment = enrollments?.data?.find((e: any) => e.courseId === course.id);
   const isEnrolled = !!enrollment;
-  const progressPercent = enrollment?.progressPercent ?? 0;
+  // Owners/admins manage announcements from this page without enrolling.
+  const isOwner =
+    !!user &&
+    (user.roles.includes('admin') || (course as any).instructorId === user.id);
+  const canSeeAnnouncements = isEnrolled || isOwner;
+  const progressPercent = safePercent((enrollment as any)?.progressPercent ?? 0);
   const firstLecture = course.modules?.[0]?.lectures?.[0];
+  const firstModule = course.modules?.[0];
+  const lectureCount = course.modules?.reduce((acc: number, mod: any) => acc + (mod.lectures?.length || 0), 0) || 0;
+  const rating = Number((course as any).avgRating ?? 0);
+  const ratingCount = Number((course as any).ratingCount ?? 0);
 
   return (
     <div className="space-y-6">
       {/* Hero Section */}
-      <div className="relative">
-        {course.thumbnailUrl && (
-          <div className="w-full h-80 rounded-2xl overflow-hidden mb-6">
-            <img
-              src={course.thumbnailUrl}
-              alt={course.title}
-              className="w-full h-full object-cover"
-            />
+      <div className="relative rounded-2xl overflow-hidden">
+        <div className="h-56 sm:h-72 p-6 sm:p-8 flex flex-col justify-end" style={{ background: categoryCover(course.category) }}>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {course.category && (
+              <span className="px-3 py-1 bg-white/15 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm">
+                {course.category}
+              </span>
+            )}
+            {course.difficulty && (
+              <span className="px-3 py-1 bg-white/15 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm capitalize">
+                {course.difficulty}
+              </span>
+            )}
+            {ratingCount > 0 && (
+              <span className="px-3 py-1 bg-white/15 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm">
+                ★ {rating.toFixed(1)} ({ratingCount})
+              </span>
+            )}
           </div>
-        )}
-        <div className="absolute top-6 left-6">
-          <span className="px-3 py-1 bg-[#F2E3D6] dark:bg-[#2c241c] text-[#A94E22] dark:text-[#e8a06f] text-xs font-medium rounded-full">
-            {course.category}
-          </span>
+          <h1 className="text-3xl sm:text-4xl font-serif font-normal tracking-tight text-white mb-2">
+            {course.title}
+          </h1>
+          <p className="text-white/85 max-w-2xl line-clamp-2">{course.description || 'No description yet.'}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          <div>
-            <h1 className="text-4xl font-serif font-normal tracking-tight text-[#1F2421] mb-4">
-              {course.title}
-            </h1>
-            <p className="text-lg text-[#5C635D]">{course.description}</p>
-            {typeof course.avg_rating === 'number' && (course.rating_count ?? 0) > 0 && (
-              <p className="text-sm text-[#5C635D] mt-2">
-                ★ {course.avg_rating.toFixed(1)} ({course.rating_count} review{course.rating_count === 1 ? '' : 's'})
-              </p>
-            )}
-          </div>
-
           {/* Course Info */}
-          <div className="flex flex-wrap gap-4">
-            <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-              <BarChart3 size={16} className="text-[#C4612F]" />
-              <span>{course.difficulty}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-              <Clock size={16} className="text-[#C4612F]" />
-              <span>{course.duration || 'Self-paced'}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-              <BookOpen size={16} className="text-[#C4612F]" />
-              <span>
-                {course.modules?.reduce((acc, mod) => acc + (mod.lectures?.length || 0), 0) || 0}{' '}
-                lectures
-              </span>
-            </div>
-            {course.certificateOffered && (
+          <Card>
+            <div className="flex flex-wrap gap-x-6 gap-y-3">
               <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-                <Award size={16} className="text-[#C4612F]" />
-                <span>Certificate included</span>
+                <BarChart3 size={16} className="text-[#C4612F]" aria-hidden="true" />
+                <span className="capitalize">{course.difficulty || 'Beginner'}</span>
               </div>
-            )}
-          </div>
+              <div className="flex items-center gap-2 text-sm text-[#5C635D]">
+                <Clock size={16} className="text-[#C4612F]" aria-hidden="true" />
+                <span>{course.duration || 'Self-paced'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-[#5C635D]">
+                <BookOpen size={16} className="text-[#C4612F]" aria-hidden="true" />
+                <span>{lectureCount} lecture{lectureCount === 1 ? '' : 's'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-[#5C635D]">
+                <Award size={16} className="text-[#C4612F]" aria-hidden="true" />
+                <span>Certificate on completion</span>
+              </div>
+            </div>
+          </Card>
 
           {/* Instructor */}
-          {course.instructor && (
+          {(course as any).instructorName && (
             <Card>
               <h3 className="text-lg font-serif text-[#1F2421] mb-2">Instructor</h3>
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#F2E3D6] rounded-full flex items-center justify-center">
-                  <span className="text-[#A94E22] dark:text-[#e8a06f] font-medium">
-                    {course.instructor.name.charAt(0)}
+                <div className="w-12 h-12 bg-[#F2E3D6] rounded-full flex items-center justify-center" aria-hidden="true">
+                  <span className="text-[#8A3E1C] dark:text-[#e8a06f] font-medium">
+                    {String((course as any).instructorName).charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <div>
-                  <p className="font-medium text-[#1F2421]">{course.instructor.name}</p>
-                  <p className="text-sm text-[#5C635D]">{course.instructor.email}</p>
+                  <p className="font-medium text-[#1F2421]">{(course as any).instructorName}</p>
                 </div>
               </div>
             </Card>
           )}
 
           {/* Course Content */}
-          {course.modules && course.modules.length > 0 && (
+          {course.modules && course.modules.length > 0 ? (
             <Card>
               <h3 className="text-lg font-serif text-[#1F2421] mb-4">Course Content</h3>
               <div className="space-y-3">
-                {course.modules.map((module, idx) => (
+                {course.modules.map((module: any, idx: number) => (
                   <div key={module.id} className="border-b border-[#E7E1D7] last:border-b-0 pb-3 last:pb-0">
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="font-medium text-[#1F2421]">
@@ -138,30 +170,42 @@ export const CourseDetail = () => {
                     {module.description && (
                       <p className="text-sm text-[#5C635D] mb-2">{module.description}</p>
                     )}
-                    {isEnrolled && module.lectures && (
+                    {module.lectures && module.lectures.length > 0 ? (
                       <ul className="ml-4 space-y-1">
-                        {module.lectures.map((lecture) => (
-                          <li key={lecture.id} className="text-sm text-[#5C635D] flex items-center gap-2">
-                            <PlayCircle size={14} className="text-[#C4612F]" />
-                            <Link
-                              to={`/courses/${course.id}/play/${lecture.id}`}
-                              className="hover:text-[#C4612F] hover:underline"
-                            >
-                              {lecture.title}
-                            </Link>
-                          </li>
-                        ))}
+                        {module.lectures.map((lecture: any) =>
+                          lecture?.id ? (
+                            <li key={lecture.id} className="text-sm text-[#5C635D] flex items-center gap-2">
+                              <PlayCircle size={14} className="text-[#C4612F] shrink-0" aria-hidden="true" />
+                              {isEnrolled ? (
+                                <Link
+                                  to={`/courses/${course.id}/play/${lecture.id}`}
+                                  className="hover:text-[#C4612F] hover:underline"
+                                >
+                                  {lecture.title}
+                                </Link>
+                              ) : (
+                                <span>{lecture.title}</span>
+                              )}
+                            </li>
+                          ) : null
+                        )}
                       </ul>
+                    ) : (
+                      <p className="text-sm text-[#5C635D] ml-4">Lectures coming soon.</p>
                     )}
                   </div>
                 ))}
               </div>
             </Card>
+          ) : (
+            <Card>
+              <p className="text-sm text-[#5C635D] text-center py-6">Curriculum is being prepared for this course.</p>
+            </Card>
           )}
-          {isEnrolled && (
+          {canSeeAnnouncements && (
             <AnnouncementList
               courseId={course.id}
-              instructorId={(course as any).instructor_id ?? course.instructorId}
+              instructorId={(course as any).instructorId ?? undefined}
             />
           )}
           <CourseReviews courseId={course.id} canReview={isEnrolled} />
@@ -174,14 +218,14 @@ export const CourseDetail = () => {
             {isEnrolled ? (
               <div className="space-y-3">
                 <div className="text-center py-4">
-                  <div className="w-16 h-16 bg-[#F2E3D6] rounded-full flex items-center justify-center mx-auto mb-3">
+                  <div className="w-16 h-16 bg-[#F2E3D6] rounded-full flex items-center justify-center mx-auto mb-3" aria-hidden="true">
                     <Award className="text-[#C4612F]" size={28} />
                   </div>
                   <p className="text-sm text-[#5C635D] mb-2">You're enrolled</p>
-                  <p className="text-2xl font-serif text-[#1F2421]">{progressPercent}%</p>
-                  <p className="text-xs text-[#5C635D]">Complete</p>
+                  <p className="text-2xl font-serif text-[#1F2421]">{displayPercent(progressPercent)}</p>
+                  <p className="text-xs text-[#5C635D]">{progressPercent >= 100 ? 'Completed' : 'Complete'}</p>
                 </div>
-                {firstLecture && (
+                {firstLecture?.id ? (
                   <Button
                     fullWidth
                     onClick={() => navigate(`/courses/${course.id}/play/${firstLecture.id}`)}
@@ -189,6 +233,8 @@ export const CourseDetail = () => {
                     <PlayCircle size={18} />
                     {progressPercent > 0 ? 'Continue Learning' : 'Start Course'}
                   </Button>
+                ) : (
+                  <p className="text-sm text-[#5C635D] text-center">Lectures coming soon.</p>
                 )}
                 <Button
                   fullWidth
@@ -220,6 +266,15 @@ export const CourseDetail = () => {
                 >
                   Study Plan
                 </Button>
+                {firstModule?.id && (
+                  <Button
+                    fullWidth
+                    variant="outline"
+                    onClick={() => navigate(`/flashcards/${firstModule.id}`)}
+                  >
+                    Flashcards
+                  </Button>
+                )}
                 <Button
                   fullWidth
                   variant="outline"
@@ -233,6 +288,12 @@ export const CourseDetail = () => {
                 <div className="text-center py-4">
                   <p className="text-sm text-[#5C635D] mb-2">Ready to start learning?</p>
                 </div>
+                {enrollError && (
+                  <p className="text-sm text-red-700" role="alert">{enrollError}</p>
+                )}
+                {enrollNotice && (
+                  <p className="text-sm text-green-700" role="status">{enrollNotice}</p>
+                )}
                 <Button fullWidth onClick={handleEnroll} loading={enrolling}>
                   Enroll Now
                 </Button>
@@ -240,19 +301,17 @@ export const CourseDetail = () => {
             )}
           </Card>
 
-          {course.certificateOffered && (
-            <Card>
-              <div className="flex items-start gap-3">
-                <Award className="text-[#C4612F] mt-0.5" size={20} />
-                <div>
-                  <h4 className="font-medium text-[#1F2421] mb-1">Earn a Certificate</h4>
-                  <p className="text-sm text-[#5C635D]">
-                    Complete all requirements to earn your certificate
-                  </p>
-                </div>
+          <Card>
+            <div className="flex items-start gap-3">
+              <Award className="text-[#C4612F] mt-0.5" size={20} aria-hidden="true" />
+              <div>
+                <h4 className="font-medium text-[#1F2421] mb-1">Earn a Certificate</h4>
+                <p className="text-sm text-[#5C635D]">
+                  Complete all requirements to earn your certificate
+                </p>
               </div>
-            </Card>
-          )}
+            </div>
+          </Card>
         </div>
       </div>
     </div>

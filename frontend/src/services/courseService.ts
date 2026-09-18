@@ -1,5 +1,6 @@
 import { api } from './api';
 import { Course, CourseFilters, PaginatedResponse, Module, Lecture } from '@/types';
+import { normalizeCourse, normalizeModule, normalizeLecture, normalizePage, normalizeReview, num } from '@/utils/model';
 
 export const courseService = {
   async getCourses(filters?: CourseFilters): Promise<PaginatedResponse<Course>> {
@@ -18,16 +19,21 @@ export const courseService = {
 
     const response = await api.get<PaginatedResponse<Course>>(`/courses?${params.toString()}`);
     const data = response.data;
-    if (!data.totalPages) {
-      data.totalPages = Math.ceil(data.total / data.pageSize);
-    }
-    data.courses = data.data;
-    return data;
+    const page = normalizePage(data, (r) => normalizeCourse(r));
+    const pageSizeOut = num((data as any)?.pageSize, page.pageSize);
+    return {
+      data: page.data,
+      page: page.page,
+      pageSize: pageSizeOut,
+      total: page.total,
+      totalPages: Math.max(1, Math.ceil(page.total / Math.max(1, pageSizeOut))),
+      courses: page.data,
+    } as PaginatedResponse<Course>;
   },
 
   async getCourse(courseId: string): Promise<Course> {
     const response = await api.get<Course>(`/courses/${courseId}`);
-    return response.data;
+    return normalizeCourse(response.data as any) as unknown as Course;
   },
 
   async enrollCourse(courseId: string) {
@@ -44,22 +50,23 @@ export const courseService = {
     // Instructors see their own courses by filtering without status param
     // or by using the standard /courses endpoint
     const response = await api.get<PaginatedResponse<Course>>('/courses');
-    return response.data;
+    const page = normalizePage(response.data, (r) => normalizeCourse(r));
+    return { ...response.data, ...page, courses: page.data } as PaginatedResponse<Course>;
   },
 
   async createCourse(data: { title: string; description?: string; category?: string; difficulty?: string }) {
     const response = await api.post('/courses', data);
-    return response.data;
+    return normalizeCourse(response.data);
   },
 
   async updateCourse(courseId: string, data: { title?: string; description?: string; category?: string; difficulty?: string }) {
     const response = await api.put(`/courses/${courseId}`, data);
-    return response.data;
+    return normalizeCourse(response.data);
   },
 
   async createModule(courseId: string, data: { title: string; sortOrder?: number }): Promise<Module> {
     const response = await api.post<Module>(`/courses/${courseId}/modules`, data);
-    return response.data;
+    return normalizeModule(response.data, courseId) as unknown as Module;
   },
 
   async createLecture(
@@ -67,7 +74,7 @@ export const courseService = {
     data: { title: string; sortOrder?: number; videoKey?: string; durationS?: number }
   ): Promise<Lecture> {
     const response = await api.post<Lecture>(`/courses/modules/${moduleId}/lectures`, data);
-    return response.data;
+    return normalizeLecture({ ...(response.data as any), moduleId }) as unknown as Lecture;
   },
 
   // Instructor analytics (real): GET /api/v1/courses/:id/analytics returns
@@ -78,11 +85,20 @@ export const courseService = {
   },
 
   // Course reviews (real aggregated ratings — never fabricated).
-  async listReviews(courseId: string) {
+  async listReviews(courseId: string): Promise<{
+    data: { id: string; rating: number; review: string; reviewerName: string; createdAt?: string }[];
+    aggregate: { avg_rating: number; rating_count: number };
+  }> {
     const response = await api.get(`/courses/${courseId}/reviews`);
-    return response.data as {
-      data: { id: string; rating: number; review: string; reviewer_name: string; created_at: string }[];
-      aggregate: { avg_rating: number; rating_count: number };
+    const body = response.data as any;
+    const rows = Array.isArray(body?.data) ? body.data : [];
+    const agg = body?.aggregate ?? {};
+    return {
+      data: rows.map((r: any) => normalizeReview(r)),
+      aggregate: {
+        avg_rating: Number(agg.avg_rating ?? 0),
+        rating_count: Number(agg.rating_count ?? 0),
+      },
     };
   },
 

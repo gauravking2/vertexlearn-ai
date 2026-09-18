@@ -159,10 +159,10 @@ coursesRouter.get('/:id', async (req, res, next) => {
     let course: Record<string, unknown> | undefined;
     try {
       const withMeta = await db.query(
-        `SELECT c.id, c.title, c.description, c.status, c.instructor_id, c.category, c.difficulty,
+        `SELECT c.id, c.title, c.description, c.status, c.instructor_id, u.name AS instructor_name, c.category, c.difficulty,
                 COALESCE(r.avg_rating, 0)::float AS avg_rating, COALESCE(r.rating_count, 0)::int AS rating_count,
                 c.created_at, c.updated_at
-         FROM courses c ${RATING_JOIN} WHERE c.id = $1`,
+         FROM courses c LEFT JOIN users u ON u.id = c.instructor_id ${RATING_JOIN} WHERE c.id = $1`,
         [req.params.id],
       );
       course = withMeta.rows[0] as Record<string, unknown> | undefined;
@@ -295,6 +295,9 @@ coursesRouter.post(
         req.body.sortOrder ?? 0,
       ]);
       const created = await db.query(`SELECT id, course_id, title, sort_order, created_at FROM modules WHERE id = $1`, [id]);
+      // Curriculum changed — the cached course detail would otherwise serve a stale module list (stale bytes → HTTP 304 → UI never updates).
+      await cacheInvalidate('vl:catalog');
+      await cacheInvalidate(courseMetaCacheKey(req.params.id));
       res.status(201).json(created.rows[0]);
     } catch (err) {
       next(err);
@@ -319,6 +322,11 @@ coursesRouter.post(
         `SELECT id, module_id, title, sort_order, video_key, duration_s, created_at FROM lectures WHERE id = $1`,
         [id],
       );
+      // Curriculum changed — invalidate the parent course detail + catalog.
+      const parent = await db.query(`SELECT course_id FROM modules WHERE id = $1`, [req.params.id]);
+      const parentCourseId = (parent.rows[0] as { course_id?: string } | undefined)?.course_id;
+      await cacheInvalidate('vl:catalog');
+      if (parentCourseId) await cacheInvalidate(courseMetaCacheKey(parentCourseId));
       res.status(201).json(created.rows[0]);
     } catch (err) {
       next(err);

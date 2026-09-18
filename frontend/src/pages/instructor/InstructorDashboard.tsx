@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useInstructorCourses } from '@/hooks/useCourses';
 import { useQuizDrafts } from '@/hooks/useAI';
+import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -9,12 +10,15 @@ import { BookOpen, Brain, Plus, FileText } from 'lucide-react';
 export const InstructorDashboard = () => {
   const { data: courses, isLoading: loadingCourses } = useInstructorCourses();
   const { data: drafts, isLoading: loadingDrafts } = useQuizDrafts();
+  const { user } = useAuth();
 
   if (loadingCourses || loadingDrafts) {
     return <LoadingSpinner text="Loading instructor dashboard..." />;
   }
 
-  const courseList = courses?.data ?? [];
+  const allCourses = courses?.data ?? [];
+  const isAdmin = user?.roles?.includes('admin');
+  const courseList = isAdmin ? allCourses : allCourses.filter((c: any) => (c.instructorId ?? c.instructor_id) === user?.id);
   const draftList = drafts?.data ?? [];
   const pendingDrafts = draftList.filter((d: any) => d.status === 'pending_review');
 
@@ -82,6 +86,9 @@ export const InstructorDashboard = () => {
             </Button>
             <Button as={Link} to="/instructor/courses" variant="outline" fullWidth>
               Manage courses
+            </Button>
+            <Button as={Link} to="/instructor/analytics" variant="outline" fullWidth>
+              View analytics
             </Button>
           </div>
         </Card>

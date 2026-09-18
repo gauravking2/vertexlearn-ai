@@ -1,4 +1,5 @@
 import { api } from './api';
+import { normalizeRecommendation } from '@/utils/model';
 import {
   ChatSession,
   ChatMessage,
@@ -46,6 +47,13 @@ export const aiService = {
     return response.data;
   },
 
+  // Transcript ingestion (real): lecture material → chunk + embed + pgvector.
+  // Powers the tutor, summaries, and AI quiz drafts for the lecture.
+  async ingestTranscript(lectureId: string, transcript: string): Promise<{ lectureId: string; courseId: string; chunks: number }> {
+    const response = await api.post(`/ai/lectures/${lectureId}/transcript`, { transcript });
+    return response.data;
+  },
+
   // AI Quiz Generation (Instructor, real)
   async generateQuizDraft(lectureId: string, count = 5): Promise<AIQuizDraft> {
     const response = await api.post<AIQuizDraft>(`/ai/lectures/${lectureId}/generate-quiz`, {
@@ -74,14 +82,16 @@ export const aiService = {
     return response.data;
   },
 
-  // Flashcards (real)
+  // Flashcards (real): backend returns { moduleId, flashcards: [{id, front, back}] }
   async generateModuleFlashcards(moduleId: string): Promise<{ data: Flashcard[] }> {
     const response = await api.post<{ data: Flashcard[] }>(`/ai/modules/${moduleId}/flashcards`);
-    return response.data;
+    const body = response.data as any;
+    const cards = Array.isArray(body?.flashcards) ? body.flashcards : Array.isArray(body?.data) ? body.data : [];
+    return { data: cards };
   },
 
-  // Study Plan (real)
-  async generateStudyPlan(courseId: string): Promise<StudyPlan> {
+  // Study Plan (real): backend returns the saved row with nested `plan`
+  async generateStudyPlan(courseId: string): Promise<StudyPlan & { plan?: any }> {
     const response = await api.post<StudyPlan>('/ai/study-plan', { courseId });
     return response.data;
   },
@@ -92,9 +102,11 @@ export const aiService = {
     return response.data;
   },
 
-  // Recommendations (real)
+  // Recommendations (real): rows carry course_id snake_case — normalized
   async getRecommendations(): Promise<{ data: Recommendation[] }> {
     const response = await api.get<{ data: Recommendation[] }>('/recommendations/me');
-    return response.data;
+    const body = response.data as any;
+    const rows = Array.isArray(body?.data) ? body.data : [];
+    return { data: rows.map((r: any, i: number) => normalizeRecommendation(r, i)) } as unknown as { data: Recommendation[] };
   },
 };

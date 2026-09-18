@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useInstructorCourses, useCreateCourse } from '@/hooks/useCourses';
+import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -11,12 +12,16 @@ import { Plus, Pencil, BookOpen } from 'lucide-react';
 export const CourseManagement = () => {
   const { data, isLoading } = useInstructorCourses();
   const { mutate: createCourse, isPending: creating } = useCreateCourse();
+  const { user } = useAuth();
 
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
 
-  const courses = data?.data ?? [];
+  const allCourses = data?.data ?? [];
+  // Instructors manage only their own courses; admins (platform-wide) see all.
+  const isAdmin = user?.roles?.includes('admin');
+  const courses = isAdmin ? allCourses : allCourses.filter((c: any) => (c.instructorId ?? c.instructor_id) === user?.id);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();

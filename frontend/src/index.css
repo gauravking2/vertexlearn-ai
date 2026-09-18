@@ -24,6 +24,68 @@ html.dark body {
   color: #ece9e2;
 }
 
+/* Contrast fix: most page components use the light palette with hardcoded
+   hex classes and no `dark:` variant, which rendered near-black text on the
+   dark background. These `html.dark` remaps restore AA-readable text and
+   surfaces app-wide WITHOUT touching layout or components. Guards
+   (`:not([class*="dark:..."])`) leave every element that already carries an
+   explicit same-property dark variant untouched, using property-specific
+   guards so mixed cases (e.g. explicit dark:bg + light-only text) still get
+   readable text. Palette: primary #ece9e2, secondary #b9beb4,
+   accent-light #e8a06f, surfaces #1a1d17/#23261f, borders #2c2f2a. */
+html.dark .text-\[\#1F2421\]:not([class*="dark:text"]) {
+  color: #ece9e2;
+}
+html.dark .text-\[\#5C635D\]:not([class*="dark:text"]) {
+  color: #b9beb4;
+}
+html.dark .text-\[\#C4612F\]:not([class*="dark:text"]) {
+  color: #e8a06f;
+}
+html.dark .text-red-600:not([class*="dark:text"]) {
+  color: #f87171;
+}
+html.dark .text-red-700:not([class*="dark:text"]) {
+  color: #fca5a5;
+}
+html.dark .text-green-700:not([class*="dark:text"]),
+html.dark .text-green-600:not([class*="dark:text"]) {
+  color: #86efac;
+}
+html.dark .text-yellow-700:not([class*="dark:text"]),
+html.dark .text-yellow-600:not([class*="dark:text"]) {
+  color: #fde047;
+}
+html.dark .bg-\[\#FFFFFF\]:not([class*="dark:bg"]) {
+  background-color: #1a1d17;
+}
+html.dark .bg-\[\#FBF9F5\]:not([class*="dark:bg"]) {
+  background-color: #23261f;
+}
+html.dark .bg-\[\#F7F4EF\]:not([class*="dark:bg"]) {
+  background-color: #12140f;
+}
+html.dark .border-\[\#E7E1D7\]:not([class*="dark:border"]) {
+  border-color: #2c2f2a;
+}
+/* Hover states that would otherwise flash light surfaces/dark text. */
+html.dark .hover\:bg-\[\#FBF9F5\]:hover:not([class*="dark:bg"]) {
+  background-color: #23261f;
+}
+html.dark .hover\:bg-\[\#F2E3D6\]:hover:not([class*="dark:bg"]) {
+  background-color: #2c241c;
+}
+html.dark .hover\:text-\[\#1F2421\]:hover:not([class*="dark:text"]) {
+  color: #ece9e2;
+}
+html.dark .hover\:text-\[\#C4612F\]:hover:not([class*="dark:text"]) {
+  color: #e8a06f;
+}
+/* Placeholders: muted but clearly visible. */
+html.dark .placeholder\:text-\[\#5C635D\]:not([class*="dark:placeholder"])::placeholder {
+  color: #8a9184;
+}
+
 /* Visible focus for keyboard users (WCAG 2.4.7). */
 :focus-visible {
   outline: 2px solid #c4612f;

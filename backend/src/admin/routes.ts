@@ -427,6 +427,8 @@ adminRouter.put('/admin/moderation/posts/:postId', validateBody(moderationAction
     }
     if (action === 'resolve' || action === 'hide') {
       await db.query(`UPDATE discussion_flags SET status = 'resolved' WHERE post_id = $1 AND status = 'open'`, [req.params.postId]).catch(() => undefined);
+      // Resolved flags must clear the queue counter or the post stays listed forever.
+      await db.query(`UPDATE discussion_posts SET flag_count = 0 WHERE id = $1`, [req.params.postId]).catch(() => undefined);
     } else if (action === 'dismiss') {
       await db.query(`UPDATE discussion_flags SET status = 'dismissed' WHERE post_id = $1 AND status = 'open'`, [req.params.postId]).catch(() => undefined);
       await db.query(`UPDATE discussion_posts SET flag_count = 0 WHERE id = $1`, [req.params.postId]).catch(() => undefined);

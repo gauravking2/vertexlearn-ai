@@ -85,9 +85,9 @@ export const InstructorAssignments = () => {
     setEditingId(a.id);
     setTitle(a.title ?? '');
     setDescription(a.description ?? '');
-    const raw = a.due_at ?? a.dueAt;
+    const raw = a.dueAt;
     setDueAt(raw ? new Date(raw).toISOString().slice(0, 16) : '');
-    setMaxScore(String(a.max_score ?? a.maxScore ?? 100));
+    setMaxScore(String(a.maxScore ?? 100));
     setShowForm(true);
   };
 
@@ -115,8 +115,9 @@ export const InstructorAssignments = () => {
           <form onSubmit={handleSubmit} className="space-y-3">
             <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
             <div>
-              <label className="block text-sm font-medium text-[#1F2421] mb-1.5">Description</label>
+              <label className="block text-sm font-medium text-[#1F2421] mb-1.5" htmlFor="assignment-description">Description</label>
               <textarea
+                id="assignment-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full px-4 py-2.5 border border-[#E7E1D7] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4612F] resize-none"
@@ -155,7 +156,7 @@ export const InstructorAssignments = () => {
       {!isError && assignments.length > 0 && (
         <div className="space-y-3">
           {assignments.map((a: any) => {
-            const due = a.due_at ?? a.dueAt;
+            const due = a.dueAt;
             return (
               <Card key={a.id}>
                 <div className="flex items-start justify-between gap-4">
@@ -163,7 +164,7 @@ export const InstructorAssignments = () => {
                     <h3 className="font-medium text-[#1F2421]">{a.title}</h3>
                     {a.description && <p className="text-sm text-[#5C635D] line-clamp-2">{a.description}</p>}
                     <div className="flex gap-2 mt-1">
-                      <Badge variant="neutral">Max {a.max_score ?? a.maxScore}</Badge>
+                      <Badge variant="neutral">Max {a.maxScore}</Badge>
                       {due && <Badge variant="neutral">Due {new Date(due).toLocaleDateString()}</Badge>}
                     </div>
                   </div>

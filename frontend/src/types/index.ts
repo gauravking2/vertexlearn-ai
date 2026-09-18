@@ -40,8 +40,9 @@ export interface Course {
   id: string;
   title: string;
   description: string;
-  instructorId: string;
+  instructorId: string | null;
   instructor?: User;
+  instructorName?: string;
   status: CourseStatus;
   category?: string;
   difficulty?: CourseDifficulty;
@@ -58,32 +59,34 @@ export interface Course {
   certificateOffered?: boolean;
   progress?: number;
   enrollmentCount?: number;
-  // Phase 6: real catalog metadata (migration 005; snake_case mirrors the API)
-  avg_rating?: number;
-  rating_count?: number;
-  instructor_id?: string;
+  // Rating aggregates (normalized camelCase; backend sends snake_case)
+  avgRating?: number;
+  ratingCount?: number;
 }
 
 export interface Module {
   id: string;
-  courseId: string;
+  courseId: string | null;
   title: string;
   description?: string;
-  orderIndex: number;
-  createdAt: string;
+  orderIndex?: number;
+  sortOrder?: number;
+  createdAt?: string;
   lectures?: Lecture[];
 }
 
 export interface Lecture {
   id: string;
-  moduleId: string;
+  moduleId: string | null;
   title: string;
   description?: string;
   videoKey?: string;
   videoUrl?: string;
   duration?: number;
-  orderIndex: number;
-  createdAt: string;
+  durationS?: number;
+  orderIndex?: number;
+  sortOrder?: number;
+  createdAt?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -116,12 +119,15 @@ export interface CourseFilters {
 
 export interface Enrollment {
   id: string;
-  userId: string;
-  courseId: string;
-  enrolledAt: string;
+  userId?: string;
+  courseId: string | null;
+  enrolledAt?: string;
+  createdAt?: string;
   completedAt?: string;
   progressPercent: number;
   course?: Course;
+  courseTitle?: string;
+  courseStatus?: string;
   progress?: number; // Alias for progressPercent
   lastAccessedLectureId?: string; // Last lecture viewed
 }
@@ -225,6 +231,7 @@ export interface QuizAttempt {
   startedAt: string;
   submittedAt?: string;
   score?: number;
+  maxScore?: number;
   totalPoints: number;
   status: AttemptStatus;
   answers?: QuizAnswer[];
@@ -363,7 +370,7 @@ export interface GamificationStats {
   currentStreak: number;
   longestStreak: number;
   lastActivityAt?: string;
-  badges: UserBadge[];
+  badges: { id: string; name: string; awardedAt?: string }[];
 }
 
 // ========================================
@@ -373,9 +380,10 @@ export interface GamificationStats {
 export interface Certificate {
   id: string;
   userId: string;
-  courseId: string;
-  issuedAt: string;
+  courseId: string | null;
+  courseTitle?: string;
   certificateCode?: string;
+  issuedAt?: string;
   pdfKey?: string;
   course?: Course;
 }

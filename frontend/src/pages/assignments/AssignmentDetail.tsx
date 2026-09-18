@@ -53,8 +53,8 @@ export const AssignmentDetail = () => {
   }
 
   const a = assignment as any;
-  const dueAt = a.due_at ?? a.dueAt;
-  const maxScore = a.max_score ?? a.maxScore;
+  const dueAt = a.dueAt;
+  const maxScore = a.maxScore;
   const submitted = Boolean(mySubmission);
 
   const handleSubmit = () => {
@@ -110,7 +110,7 @@ export const AssignmentDetail = () => {
             </div>
             <h3 className="text-xl font-serif text-[#1F2421] mb-2">Submitted</h3>
             <p className="text-[#5C635D] mb-2">
-              Submitted {(mySubmission as any)?.submitted_at ? new Date((mySubmission as any).submitted_at).toLocaleString() : ''}.
+              Submitted {(mySubmission as any)?.submittedAt ? new Date((mySubmission as any).submittedAt).toLocaleString() : ''}.
               {(mySubmission as any)?.grade != null
                 ? ` Grade: ${(mySubmission as any).grade}${(mySubmission as any)?.feedback ? ` — ${(mySubmission as any).feedback}` : ''}`
                 : " You'll be notified when it's graded."}

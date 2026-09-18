@@ -5,6 +5,7 @@ import { useCreateChatSession, useSendMessage, useSessionMessages, useUpdateSess
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { getApiErrorMessage } from '@/components/common/apiError';
 import { Send, Bot, User, BookOpen, AlertCircle } from 'lucide-react';
 import { AIMode } from '@/types';
 
@@ -22,7 +23,7 @@ export const AITutorPage = () => {
 
   const { data: course } = useCourse(courseId);
   const { mutate: createSession, isPending: creatingSession } = useCreateChatSession();
-  const { mutate: sendMessage, isPending: sendingMessage } = useSendMessage();
+  const { mutate: sendMessage, isPending: sendingMessage, isError: sendFailed, error: sendError, reset: resetSend } = useSendMessage();
   const { mutate: updateMode } = useUpdateSessionMode();
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -56,12 +57,25 @@ export const AITutorPage = () => {
   const handleSendMessage = () => {
     if (!message.trim() || !activeSessionId) return;
     const text = message.trim();
+    resetSend();
     setPendingUserMessage(text);
     setMessage('');
     sendMessage(
       { sessionId: activeSessionId, message: text },
-      { onSuccess: () => setPendingUserMessage(null) }
+      {
+        onSuccess: () => setPendingUserMessage(null),
+        // Clear the stuck pending bubble, restore the text for one-click retry.
+        onError: () => {
+          setPendingUserMessage(null);
+          setMessage(text);
+        },
+      }
     );
+  };
+
+  const handleDismissSendError = () => {
+    resetSend();
+    setPendingUserMessage(null);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -215,6 +229,14 @@ export const AITutorPage = () => {
                   </div>
                 </div>
               )}
+              {sendFailed && !sendingMessage && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
+                  <p className="text-sm text-red-800 mb-2">
+                    The tutor is unavailable right now ({getApiErrorMessage(sendError)}). Your question was kept below — try sending it again.
+                  </p>
+                  <Button size="sm" variant="outline" onClick={handleDismissSendError}>Dismiss</Button>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -233,8 +255,9 @@ export const AITutorPage = () => {
                   onClick={handleSendMessage}
                   disabled={!message.trim() || sendingMessage}
                   className="self-end"
+                  aria-label="Send message"
                 >
-                  <Send size={18} />
+                  <Send size={18} aria-hidden="true" />
                 </Button>
               </div>
               <p className="text-xs text-[#5C635D] mt-2">

@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useStartQuizAttempt, useSubmitQuizAttempt } from '@/hooks/useQuizzes';
+import { useStartQuizAttempt, useSubmitQuizAttempt, useQuiz } from '@/hooks/useQuizzes';
+import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Badge } from '@/components/common/Badge';
-import { FileQuestion, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileQuestion, AlertCircle } from 'lucide-react';
+import { recordAttempt } from '@/utils/model';
 
 interface AttemptQuestion {
   id: string;
@@ -19,13 +21,13 @@ interface AttemptQuestion {
 export const QuizAttempt = () => {
   const { id: quizId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const { mutate: startAttempt, isPending: starting, data: attemptData } = useStartQuizAttempt();
   const { mutate: submitAttempt, isPending: submitting } = useSubmitQuizAttempt();
+  const { data: quiz } = useQuiz(quizId);
 
   const [answers, setAnswers] = useState<Record<string, { selectedOptionIds?: string[]; answerText?: string }>>({});
-  const [submitted, setSubmitted] = useState(false);
-  const [result, setResult] = useState<{ score: number; maxScore: number } | null>(null);
 
   // POST /quizzes/:id/attempt returns the attempt fields plus `questions`.
   const attempt: any = (attemptData as any)?.attempt ?? attemptData;
@@ -61,9 +63,19 @@ export const QuizAttempt = () => {
     submitAttempt(
       { attemptId: attempt.id, answers: formatted },
       {
+        // Real server-side result page (GET /attempts/:id); the attempt is
+        // also recorded to the local per-user history ledger.
         onSuccess: (data: any) => {
-          setSubmitted(true);
-          setResult({ score: data.score ?? 0, maxScore: data.maxScore ?? 0 });
+          const score = data.score ?? 0;
+          const maxScore = data.maxScore ?? 0;
+          recordAttempt(user?.id, {
+            attemptId: attempt.id,
+            quizId: quizId ?? '',
+            quizTitle: (quiz as any)?.title ?? 'Quiz',
+            score,
+            maxScore,
+          });
+          navigate(`/quiz-attempts/${attempt.id}/result`);
         },
       }
     );
@@ -86,26 +98,6 @@ export const QuizAttempt = () => {
             <h3 className="text-lg font-medium text-[#1F2421] mb-2">Ready to begin?</h3>
             <p className="text-[#5C635D] mb-4">Once started, answer all questions and submit.</p>
             <Button onClick={handleStart}>Start attempt</Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  if (submitted && result) {
-    return (
-      <div className="space-y-6">
-        <Card>
-          <div className="text-center py-8">
-            <CheckCircle2 className="mx-auto text-green-600 mb-4" size={48} />
-            <h2 className="text-2xl font-serif text-[#1F2421] mb-2">Submitted</h2>
-            <p className="text-[#5C635D] mb-2">Your attempt has been recorded.</p>
-            <p className="text-3xl font-serif text-[#1F2421]">
-              {result.score} / {result.maxScore}
-            </p>
-            <Button className="mt-6" onClick={() => navigate('/dashboard')}>
-              Back to dashboard
-            </Button>
           </div>
         </Card>
       </div>

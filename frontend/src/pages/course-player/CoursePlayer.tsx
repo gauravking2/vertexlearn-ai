@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useCourse, useVideoUrl } from '@/hooks/useCourses';
+import { useAuth } from '@/hooks/useAuth';
 import {
   useUpdateLectureProgress,
   useLectureNotes,
@@ -13,6 +14,7 @@ import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { LectureSummaryPanel } from '@/components/ai/LectureSummaryPanel';
 import { MasteryCard } from '@/components/ai/MasteryCard';
+import { saveResumePosition } from '@/utils/model';
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,11 +24,13 @@ import {
   PlayCircle,
   PauseCircle,
   Volume2,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const CoursePlayer = () => {
   const { courseId, lectureId } = useParams<{ courseId: string; lectureId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const { data: course, isLoading: loadingCourse } = useCourse(courseId);
@@ -64,7 +68,8 @@ export const CoursePlayer = () => {
   }, [lectureId]);
 
   // Mark progress via the real endpoint contract: watchedSeconds + completed.
-  // There is no resumable video binary in this phase; playback state is local.
+  // Resume position is also persisted locally so Continue Learning works
+  // across refreshes even before the server has progress for this lecture.
   useEffect(() => {
     const interval = setInterval(() => {
       if (videoRef.current && lectureId) {
@@ -80,11 +85,19 @@ export const CoursePlayer = () => {
             completed,
           },
         });
+        if (courseId) saveResumePosition(user?.id ?? '', { courseId, lectureId, watchedSeconds: currentPos });
       }
     }, 10000); // Every 10 seconds
 
     return () => clearInterval(interval);
-  }, [lectureId, updateProgress]);
+  }, [lectureId, courseId, user?.id, updateProgress]);
+
+  const handleMarkComplete = () => {
+    if (!lectureId) return;
+    const watched = Math.max(Math.floor(currentTime), Math.floor(duration) || 0);
+    updateProgress({ lectureId, data: { watchedSeconds: watched, completed: true } });
+    if (courseId) saveResumePosition(user?.id ?? '', { courseId, lectureId, watchedSeconds: watched });
+  };
 
   const handlePlayPause = () => {
     if (videoRef.current) {
@@ -379,7 +392,7 @@ export const CoursePlayer = () => {
           )}
 
           {/* Navigation */}
-          <div className="flex justify-between">
+          <div className="flex flex-wrap justify-between gap-2">
             {prevLecture ? (
               <Button
                 variant="outline"
@@ -391,6 +404,10 @@ export const CoursePlayer = () => {
             ) : (
               <div />
             )}
+            <Button variant="outline" onClick={handleMarkComplete}>
+              <CheckCircle2 size={18} />
+              Mark Complete
+            </Button>
             {nextLecture ? (
               <Button onClick={() => navigate(`/courses/${courseId}/play/${nextLecture.id}`)}>
                 Next
@@ -407,6 +424,25 @@ export const CoursePlayer = () => {
         {/* Sidebar - Course Navigation */}
         <div className="space-y-4">
           {courseId && <MasteryCard courseId={courseId} />}
+          {courseId && (
+            <Card>
+              <h3 className="text-lg font-serif text-[#1F2421] mb-3">Course actions</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <Button size="sm" variant="outline" as={Link} to={`/ai-tutor/${courseId}`}>
+                  AI Tutor
+                </Button>
+                <Button size="sm" variant="outline" as={Link} to={`/courses/${courseId}/assignments`}>
+                  Assignments
+                </Button>
+                <Button size="sm" variant="outline" as={Link} to={`/courses/${courseId}/quizzes`}>
+                  Quizzes
+                </Button>
+                <Button size="sm" variant="outline" as={Link} to={`/courses/${courseId}/discussions`}>
+                  Discuss
+                </Button>
+              </div>
+            </Card>
+          )}
           <Card>
             <h3 className="text-lg font-serif text-[#1F2421] mb-4">Course Content</h3>
             <div className="space-y-3 max-h-[600px] overflow-y-auto">
@@ -422,7 +458,7 @@ export const CoursePlayer = () => {
                           onClick={() => navigate(`/courses/${courseId}/play/${lecture.id}`)}
                           className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors ${
                             lecture.id === lectureId
-                              ? 'bg-[#F2E3D6] dark:bg-[#2c241c] text-[#A94E22] dark:text-[#e8a06f]'
+                              ? 'bg-[#F2E3D6] dark:bg-[#2c241c] text-[#8A3E1C] dark:text-[#e8a06f]'
                               : 'text-[#5C635D] hover:bg-[#FBF9F5]'
                           }`}
                         >

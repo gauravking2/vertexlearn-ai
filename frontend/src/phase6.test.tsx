@@ -40,9 +40,9 @@ describe('course reviews', () => {
   it('shows the real aggregate and submits a review', async () => {
     const user = userEvent.setup();
     vi.mocked(courseService.listReviews).mockResolvedValue({
-      data: [{ id: 'r1', rating: 5, review: 'Great', reviewer_name: 'Stud', created_at: '' }],
+      data: [{ id: 'r1', rating: 5, review: 'Great', reviewerName: 'Stud', createdAt: '' }],
       aggregate: { avg_rating: 5, rating_count: 1 },
-    });
+    } as any);
     vi.mocked(courseService.submitReview).mockResolvedValue({ id: 'r2' });
     renderWithProviders(<CourseReviews courseId="c1" canReview />);
     await waitFor(() => expect(screen.getByText(/5.0 average from 1 review/)).toBeInTheDocument());
