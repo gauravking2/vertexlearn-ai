@@ -84,10 +84,12 @@ jobs:
       - name: Validate compose config (static only, throwaway placeholders)
         # .env.ci feeds ${VAR:?} interpolation; an EMPTY .env satisfies the
         # services' `env_file: ../.env` references (absent on runners — secrets
-        # are never committed). Both files are removed afterwards. Safe because
-        # a tracked .env can never exist (gitignored + never committed).
+        # are never committed). The trap guarantees both throwaway files are
+        # removed even if validation fails (runner uses bash -e, which would
+        # otherwise skip cleanup). Safe because a tracked .env can never exist
+        # (gitignored + never committed).
         run: |
+          trap 'rm -f .env.ci .env' EXIT
           printf 'POSTGRES_PASSWORD=ci-placeholder\nREDIS_PASSWORD=ci-placeholder\nMINIO_ROOT_USER=ci-placeholder\nMINIO_ROOT_PASSWORD=ci-placeholder\n' > .env.ci
           touch .env
           docker compose --env-file .env.ci -f infra/docker-compose.yml config --quiet
-          rm -f .env.ci .env
