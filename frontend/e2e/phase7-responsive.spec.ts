@@ -10,7 +10,7 @@ test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true
 test('mobile: login renders without horizontal overflow', async ({ page }) => {
   await page.route('**/api/v1/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: /vertexon/i }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /vertexlearn ai/i }).first()).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

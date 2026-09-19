@@ -24,9 +24,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           aria-invalid={error ? true : undefined}
           aria-describedby={[errorId, helperId].filter(Boolean).join(' ') || undefined}
-          className={`w-full px-4 py-2.5 bg-[#FFFFFF] dark:bg-[#1a1d17] border ${
-            error ? 'border-red-500' : 'border-[#E7E1D7] dark:border-[#2c2f2a]'
-          } rounded-lg text-[#1F2421] dark:text-[#ece9e2] placeholder:text-[#5C635D] dark:placeholder:text-[#8a9184] focus:outline-none focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all ${className}`}
+          className={`vl-input w-full min-h-11 px-4 py-2.5 border ${
+            error ? 'border-red-500' : 'border-[var(--vl-border-strong)]'
+          } rounded-[var(--vl-radius-md)] bg-[var(--vl-surface-inset)] text-[var(--vl-text)] placeholder:text-[var(--vl-text-muted)] shadow-[var(--vl-shadow-inset)] transition-[border-color,box-shadow,background-color] ${className}`}
           {...props}
         />
         {error && (

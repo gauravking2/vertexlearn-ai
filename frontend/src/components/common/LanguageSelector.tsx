@@ -11,7 +11,7 @@ export const LanguageSelector = () => {
         aria-label={t('action.selectLanguage', locale)}
         value={locale}
         onChange={(e) => setLocale(e.target.value as typeof locale)}
-        className="bg-transparent border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-lg px-2 py-1 text-sm text-[#5C635D] dark:text-[#b9beb4]"
+        className="min-h-10 rounded-[var(--vl-radius-sm)] border border-[var(--vl-border)] bg-[var(--vl-surface-inset)] px-2.5 py-1 text-sm text-[var(--vl-text-secondary)] transition-colors hover:border-[var(--vl-border-strong)] focus-visible:border-[var(--vl-accent)]"
       >
         {SUPPORTED_LOCALES.map((l) => (
           <option key={l.code} value={l.code}>

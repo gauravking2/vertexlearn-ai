@@ -2,7 +2,7 @@ import { ButtonHTMLAttributes, forwardRef } from 'react';
 import { Loader2 } from 'lucide-react';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'icon';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   fullWidth?: boolean;
@@ -26,21 +26,27 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const baseStyles = 'inline-flex items-center justify-center gap-2 font-medium transition-all rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#C4612F] focus:ring-2 focus:ring-offset-2 focus:ring-[#C4612F] disabled:opacity-50 disabled:cursor-not-allowed vl-press dark:focus-visible:ring-offset-[#12140f] dark:focus:ring-offset-[#12140f]';
+    const baseStyles = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--vl-radius-pill)] font-semibold transition-[color,background-color,border-color,box-shadow,transform] duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vl-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vl-canvas)] disabled:pointer-events-none disabled:opacity-45 vl-press';
 
-    // Contrast (measured, WCAG AA ≥4.5): white on #A94E22 = 5.53;
-    // hover #8A3E1C = 7.54. Dark mode: #14110C on #D3723F = 5.60.
     const variantStyles = {
-      primary: 'bg-[#A94E22] text-white hover:bg-[#8A3E1C] hover:shadow-md hover:-translate-y-0.5 dark:bg-[#d3723f] dark:hover:bg-[#e07f4b] dark:text-[#14110c]',
-      secondary: 'bg-[#1F2421] text-white hover:bg-[#2A2F2B] hover:shadow-md hover:-translate-y-0.5 dark:bg-[#e8e4da] dark:text-[#14110c] dark:hover:bg-[#ffffff]',
-      outline: 'border border-[#E7E1D7] text-[#1F2421] hover:bg-[#FBF9F5] hover:border-[#C4612F] dark:border-[#2c2f2a] dark:text-[#ece9e2] dark:hover:bg-[#23261f] dark:hover:border-[#d3723f]',
-      ghost: 'text-[#5C635D] hover:bg-[#FBF9F5] hover:text-[#1F2421] dark:text-[#b9beb4] dark:hover:bg-[#23261f] dark:hover:text-[#ece9e2]',
+      primary:
+        'bg-[var(--vl-accent-strong)] text-white shadow-[var(--vl-shadow-control)] hover:bg-[var(--vl-accent-hover)] hover:shadow-[var(--vl-shadow-control-hover)] dark:text-[#1b0d05]',
+      secondary:
+        'bg-[var(--vl-text)] text-[var(--vl-canvas)] shadow-[var(--vl-shadow-control)] hover:bg-[var(--vl-text-secondary)]',
+      outline:
+        'border border-[var(--vl-border-strong)] bg-[var(--vl-surface)] text-[var(--vl-text)] shadow-[var(--vl-shadow-control)] hover:border-[var(--vl-accent-border-strong)] hover:bg-[var(--vl-accent-soft)] hover:text-[var(--vl-accent-strong)]',
+      ghost:
+        'text-[var(--vl-text-secondary)] hover:bg-[var(--vl-surface-hover)] hover:text-[var(--vl-text)]',
+      danger:
+        'bg-red-700 text-white shadow-[var(--vl-shadow-control)] hover:bg-red-800 dark:bg-red-500 dark:text-[#190505] dark:hover:bg-red-400',
+      icon:
+        'min-w-11 !px-0 text-[var(--vl-text-secondary)] hover:bg-[var(--vl-surface-hover)] hover:text-[var(--vl-text)]',
     };
 
     const sizeStyles = {
       sm: 'text-sm px-4 py-2',
-      md: 'text-sm px-6 py-2.5',
-      lg: 'text-base px-8 py-3',
+      md: 'text-sm px-5 py-2.5',
+      lg: 'min-h-12 text-base px-7 py-3',
     };
 
     const widthStyle = fullWidth ? 'w-full' : '';

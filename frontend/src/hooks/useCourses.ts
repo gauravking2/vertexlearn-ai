@@ -38,6 +38,9 @@ export const useCreateCourse = () => {
     mutationFn: courseService.createCourse,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
+      // The instructor list lives under its own key; without this the
+      // management page can serve a stale empty list for staleTime.
+      queryClient.invalidateQueries({ queryKey: ['instructor-courses'] });
     },
   });
 };
@@ -51,6 +54,7 @@ export const useUpdateCourse = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['course', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['courses'] });
+      queryClient.invalidateQueries({ queryKey: ['instructor-courses'] });
     },
   });
 };

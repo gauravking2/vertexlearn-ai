@@ -42,6 +42,12 @@ html.dark .text-\[\#5C635D\]:not([class*="dark:text"]) {
 html.dark .text-\[\#C4612F\]:not([class*="dark:text"]) {
   color: #e8a06f;
 }
+html.dark .text-\[\#A94E22\]:not([class*="dark:text"]) {
+  color: #e8a06f;
+}
+html.dark .text-\[\#8A3E1C\]:not([class*="dark:text"]) {
+  color: #e8a06f;
+}
 html.dark .text-red-600:not([class*="dark:text"]) {
   color: #f87171;
 }
@@ -65,6 +71,9 @@ html.dark .bg-\[\#FBF9F5\]:not([class*="dark:bg"]) {
 html.dark .bg-\[\#F7F4EF\]:not([class*="dark:bg"]) {
   background-color: #12140f;
 }
+html.dark .bg-\[\#F2E3D6\]:not([class*="dark:bg"]) {
+  background-color: #2c241c;
+}
 html.dark .border-\[\#E7E1D7\]:not([class*="dark:border"]) {
   border-color: #2c2f2a;
 }
@@ -79,6 +88,9 @@ html.dark .hover\:text-\[\#1F2421\]:hover:not([class*="dark:text"]) {
   color: #ece9e2;
 }
 html.dark .hover\:text-\[\#C4612F\]:hover:not([class*="dark:text"]) {
+  color: #e8a06f;
+}
+html.dark .hover\:text-\[\#A94E22\]:hover:not([class*="dark:text"]) {
   color: #e8a06f;
 }
 /* Placeholders: muted but clearly visible. */
@@ -177,5 +189,359 @@ html.dark .placeholder\:text-\[\#5C635D\]:not([class*="dark:placeholder"])::plac
   }
   .vl-msg-in {
     animation: none;
+  }
+}
+
+/* ====================================================================
+   Phase 20 — Vertexon Design System
+   One coherent visual language on top of the existing palette:
+   warm ivory light theme / deep moss-charcoal dark theme, terracotta
+   primary, violet→cyan AI accents. Everything below is additive and
+   purely presentational — no behavior, markup contracts, or tests changed.
+   ==================================================================== */
+
+:root {
+  --vl-canvas: #f5f1e9;
+  --vl-canvas-deep: #eee8dc;
+  --vl-surface: rgba(255, 253, 249, 0.92);
+  --vl-surface-elevated: #fffdf9;
+  --vl-surface-inset: #f7f2e9;
+  --vl-surface-hover: #f1e9dc;
+  --vl-border: rgba(83, 68, 50, 0.14);
+  --vl-border-strong: rgba(83, 68, 50, 0.22);
+  --vl-text: #252821;
+  --vl-text-secondary: #5d6259;
+  --vl-text-muted: #777c72;
+  --vl-accent: #a94e22;
+  --vl-accent-strong: #9b431d;
+  --vl-accent-hover: #813617;
+  --vl-accent-soft: #f3e2d3;
+  --vl-accent-border: rgba(169, 78, 34, 0.2);
+  --vl-accent-border-strong: rgba(169, 78, 34, 0.48);
+  --vl-ai: #6851c8;
+  --vl-ai-secondary: #147f88;
+  --vl-focus: #9b431d;
+  --vl-radius-sm: 0.625rem;
+  --vl-radius-md: 0.875rem;
+  --vl-radius-lg: 1.125rem;
+  --vl-radius-xl: 1.5rem;
+  --vl-radius-pill: 999px;
+  --vl-shadow-inset: inset 0 1px 2px rgba(55, 43, 31, 0.04);
+  --vl-shadow-card: 0 1px 2px rgba(48, 38, 27, 0.05), 0 12px 30px -22px rgba(48, 38, 27, 0.28);
+  --vl-shadow-elevated: 0 2px 4px rgba(48, 38, 27, 0.06), 0 20px 48px -24px rgba(48, 38, 27, 0.32);
+  --vl-shadow-control: 0 1px 2px rgba(48, 38, 27, 0.12), 0 5px 14px -10px rgba(48, 38, 27, 0.4);
+  --vl-shadow-control-hover: 0 2px 4px rgba(48, 38, 27, 0.12), 0 10px 20px -12px rgba(48, 38, 27, 0.48);
+  --vl-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark {
+  --vl-canvas: #11140f;
+  --vl-canvas-deep: #0c0f0b;
+  --vl-surface: rgba(27, 31, 24, 0.94);
+  --vl-surface-elevated: #20251d;
+  --vl-surface-inset: #171b15;
+  --vl-surface-hover: #272d23;
+  --vl-border: rgba(227, 223, 210, 0.1);
+  --vl-border-strong: rgba(227, 223, 210, 0.17);
+  --vl-text: #f0ede5;
+  --vl-text-secondary: #bdc2b8;
+  --vl-text-muted: #939a8f;
+  --vl-accent: #eda270;
+  --vl-accent-strong: #d77d49;
+  --vl-accent-hover: #e99361;
+  --vl-accent-soft: #30251d;
+  --vl-accent-border: rgba(237, 162, 112, 0.2);
+  --vl-accent-border-strong: rgba(237, 162, 112, 0.48);
+  --vl-ai: #a99af0;
+  --vl-ai-secondary: #67c4c8;
+  --vl-focus: #eda270;
+  --vl-shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.28);
+  --vl-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 32px -22px rgba(0, 0, 0, 0.72);
+  --vl-shadow-elevated: 0 2px 4px rgba(0, 0, 0, 0.36), 0 24px 52px -24px rgba(0, 0, 0, 0.8);
+  --vl-shadow-control: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 16px -10px rgba(0, 0, 0, 0.72);
+  --vl-shadow-control-hover: 0 2px 4px rgba(0, 0, 0, 0.38), 0 12px 22px -12px rgba(0, 0, 0, 0.78);
+}
+
+@layer components {
+  /* --- Ambient page canvas -------------------------------------- */
+  /* Soft layered light field: warm top light, two faint color pools
+     (violet + terracotta) anchored to corners. Fixed attachment keeps
+     it stable while scrolling; stops are very low alpha for calm. */
+  .vl-canvas {
+    background-color: var(--vl-canvas);
+    background-image:
+      radial-gradient(900px 460px at 86% -12%, color-mix(in srgb, var(--vl-accent) 7%, transparent), transparent 64%),
+      radial-gradient(700px 390px at 5% 10%, color-mix(in srgb, var(--vl-ai) 5%, transparent), transparent 62%),
+      linear-gradient(180deg, color-mix(in srgb, var(--vl-canvas) 95%, white) 0%, var(--vl-canvas) 48%, var(--vl-canvas-deep) 100%);
+    background-attachment: fixed, fixed, fixed;
+  }
+
+  /* --- Surfaces --------------------------------------------------- */
+  .vl-card {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 55%, transparent), var(--vl-shadow-card);
+  }
+  .dark .vl-card {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), var(--vl-shadow-card);
+  }
+  .vl-card-elevated {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 62%, transparent), var(--vl-shadow-elevated);
+  }
+  .dark .vl-card-elevated {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), var(--vl-shadow-elevated);
+  }
+  .vl-card-featured {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 64%, transparent), 0 0 0 1px var(--vl-accent-border), var(--vl-shadow-elevated);
+  }
+  .vl-panel {
+    box-shadow: var(--vl-shadow-inset);
+  }
+  .vl-input:hover:not(:disabled) {
+    border-color: var(--vl-accent-border-strong);
+  }
+  .vl-input:focus-visible {
+    border-color: var(--vl-accent);
+    background: var(--vl-surface-elevated);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vl-focus) 18%, transparent);
+    outline: none;
+  }
+  .vl-input:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .vl-page-header {
+    padding-block: 0.25rem;
+  }
+
+  /* --- Hero / section ambient ------------------------------------ */
+  /* Depth without "giant glowing blobs": a top sheen, a fine grid, and
+     a bottom fade. Purely decorative, behind content. */
+  .vl-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .vl-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 38%),
+      radial-gradient(560px 220px at 88% -20%, rgba(6, 182, 212, 0.28), transparent 65%),
+      radial-gradient(520px 240px at 6% 120%, rgba(196, 97, 47, 0.30), transparent 60%);
+  }
+  .vl-hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 34px 34px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 72%);
+    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 72%);
+  }
+
+  /* Light-theme auth hero: same grid language, ink-based. */
+  .vl-hero-light {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .vl-hero-light::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image:
+      linear-gradient(rgba(31, 36, 33, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(31, 36, 33, 0.045) 1px, transparent 1px);
+    background-size: 30px 30px;
+    mask-image: radial-gradient(640px 480px at 50% 18%, rgba(0, 0, 0, 0.9), transparent 78%);
+    -webkit-mask-image: radial-gradient(640px 480px at 50% 18%, rgba(0, 0, 0, 0.9), transparent 78%);
+  }
+  .dark .vl-hero-light::after {
+    background-image:
+      linear-gradient(rgba(236, 233, 226, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(236, 233, 226, 0.05) 1px, transparent 1px);
+  }
+
+  /* --- Typography helpers ----------------------------------------- */
+  .vl-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  /* Gradient headline treatment for marketing-ish display text. */
+  .vl-gradient-text {
+    background: linear-gradient(100deg, #e8a06f 0%, #f2c29b 40%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* --- Motion ------------------------------------------------------ */
+  .vl-stagger > * {
+    opacity: 1;
+  }
+
+  /* Sidebar active marker: accent bar that eases in. */
+  .vl-nav-active {
+    position: relative;
+  }
+  .vl-nav-active::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    top: 22%;
+    bottom: 22%;
+    width: 3px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #c4612f, #a94e22);
+    transform-origin: center;
+    animation: vl-grow-y 220ms var(--vl-ease) both;
+  }
+  @keyframes vl-grow-y {
+    from { transform: scaleY(0.2); opacity: 0; }
+    to { transform: scaleY(1); opacity: 1; }
+  }
+
+  /* Typing dots for AI (calm rise/fall instead of bounce). */
+  .vl-dot {
+    animation: vl-dot 1.1s ease-in-out infinite;
+  }
+  .vl-dot:nth-child(2) { animation-delay: 0.15s; }
+  .vl-dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes vl-dot {
+    0%, 100% { transform: translateY(0); opacity: 0.45; }
+    50% { transform: translateY(-3px); opacity: 1; }
+  }
+
+  /* AI gradient sheen that drifts across chips/sparkle icons. */
+  .vl-ai-chip {
+    background: linear-gradient(110deg, #7c3aed, #6d28d9 45%, #0891b2);
+    background-size: 160% 100%;
+    transition: background-position 600ms var(--vl-ease), box-shadow 200ms ease, transform 200ms var(--vl-ease);
+  }
+  .vl-ai-chip:hover {
+    background-position: 100% 0;
+    box-shadow: 0 8px 20px -8px rgba(124, 58, 237, 0.55);
+  }
+
+  /* Distinct AI chip in dark mode keeps AA on white text. */
+  .dark .vl-ai-chip {
+    background: linear-gradient(110deg, #8b5cf6, #7c3aed 45%, #0e7490);
+  }
+
+  .vl-mobile-drawer {
+    animation: vl-drawer-in 220ms var(--vl-ease) both;
+  }
+  @keyframes vl-drawer-in {
+    from { opacity: 0; transform: translateX(-4%); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* --- Video range slider ------------------------------------------ */
+  .vl-range {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    outline-offset: 4px;
+  }
+  .vl-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: #ffffff;
+    border: 2px solid #c4612f;
+    box-shadow: 0 1px 4px rgba(23, 20, 16, 0.35);
+    cursor: pointer;
+    transition: transform 120ms ease;
+  }
+  .vl-range::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+  .vl-range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: #ffffff;
+    border: 2px solid #c4612f;
+    box-shadow: 0 1px 4px rgba(23, 20, 16, 0.35);
+    cursor: pointer;
+  }
+
+  /* --- Dashed upload dropzone -------------------------------------- */
+  .vl-dropzone {
+    transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+  }
+  .vl-dropzone:hover {
+    border-color: rgba(196, 97, 47, 0.55);
+    background-color: rgba(242, 227, 214, 0.35);
+  }
+  .dark .vl-dropzone:hover {
+    border-color: rgba(232, 160, 111, 0.55);
+    background-color: rgba(44, 36, 28, 0.5);
+  }
+
+  /* --- Skeleton tint aligned to surfaces --------------------------- */
+  .dark .vl-skeleton {
+    background: rgba(236, 233, 226, 0.06);
+  }
+  .dark .vl-skeleton::after {
+    background: linear-gradient(90deg, transparent, rgba(236, 233, 226, 0.1), transparent);
+  }
+
+  /* --- Certificate flourish ---------------------------------------- */
+  .vl-cert {
+    background:
+      radial-gradient(420px 160px at 50% -40%, rgba(196, 97, 47, 0.12), transparent 70%),
+      linear-gradient(180deg, #fffdf9 0%, #fbf7f0 100%);
+  }
+  .dark .vl-cert {
+    background:
+      radial-gradient(420px 160px at 50% -40%, rgba(232, 160, 111, 0.1), transparent 70%),
+      linear-gradient(180deg, #22261e 0%, #1a1d17 100%);
+  }
+}
+
+/* Reduced motion: disable all added motion utilities. */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  a,
+  select,
+  input[type='file'] {
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vl-stagger > * {
+    animation: none !important;
+  }
+  .vl-nav-active::before {
+    animation: none !important;
+  }
+  .vl-dot {
+    animation: none !important;
+  }
+  .vl-ai-chip {
+    transition: none !important;
+  }
+  .vl-mobile-drawer {
+    animation: none !important;
   }
 }

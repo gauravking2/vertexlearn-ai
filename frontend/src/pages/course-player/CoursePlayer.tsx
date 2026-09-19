@@ -25,6 +25,7 @@ import {
   PauseCircle,
   Volume2,
   CheckCircle2,
+  ListVideo,
 } from 'lucide-react';
 
 export const CoursePlayer = () => {
@@ -185,49 +186,52 @@ export const CoursePlayer = () => {
   return (
     <div className="space-y-4">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-        <button onClick={() => navigate(`/courses/${courseId}`)} className="hover:text-[#C4612F]">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-[#5C635D] dark:text-[#b9beb4]">
+        <button onClick={() => navigate(`/courses/${courseId}`)} className="hover:text-[#C4612F] dark:hover:text-[#e8a06f] transition-colors">
           {course.title}
         </button>
-        <ChevronRight size={14} />
-        <span className="text-[#1F2421]">{currentLecture.title}</span>
-      </div>
+        <ChevronRight size={14} aria-hidden="true" />
+        <span className="text-[#1F2421] dark:text-[#ece9e2] font-medium truncate">{currentLecture.title}</span>
+      </nav>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Video Player */}
-        <div className="lg:col-span-2 space-y-4">
-          <Card>
-            <div className="aspect-video bg-[#1F2421] rounded-lg overflow-hidden mb-4">
-              {video?.url ? (
-                <video
-                  ref={videoRef}
-                  className="w-full h-full"
-                  controls
-                  src={video.url}
-                  onTimeUpdate={handleTimeUpdate}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                >
-                  Your browser does not support the video tag.
-                </video>
-              ) : (
-                <video
-                  ref={videoRef}
-                  className="w-full h-full"
-                  onTimeUpdate={handleTimeUpdate}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                >
-                  {/* No video asset attached yet — instructor uploads wire into object storage */}
-                  <source src="" type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
-              )}
+        <div className="lg:col-span-2 space-y-4 min-w-0">
+          <Card className="!p-4 sm:!p-5">
+            {/* Cinematic stage: dark in both themes so video content reads well */}
+            <div className="rounded-xl overflow-hidden bg-[#0d0f0a] ring-1 ring-black/20 mb-4 shadow-inner">
+              <div className="aspect-video">
+                {video?.url ? (
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full"
+                    controls
+                    src={video.url}
+                    onTimeUpdate={handleTimeUpdate}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                ) : (
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full"
+                    onTimeUpdate={handleTimeUpdate}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                  >
+                    {/* No video asset attached yet — instructor uploads wire into object storage */}
+                    <source src="" type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                )}
+              </div>
             </div>
             {!video?.url && (
-              <p className="text-xs text-[#5C635D] mb-2">
+              <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mb-2">
                 No video file is attached to this lecture yet. Progress, notes, and AI tools remain fully usable.
               </p>
             )}
@@ -242,12 +246,13 @@ export const CoursePlayer = () => {
                   max={duration || 0}
                   value={currentTime}
                   onChange={(e) => handleSeek(Number(e.target.value))}
-                  className="w-full h-2 bg-[#FBF9F5] rounded-full appearance-none cursor-pointer"
+                  aria-label="Seek video"
+                  className="vl-range w-full cursor-pointer"
                   style={{
-                    background: `linear-gradient(to right, #C4612F 0%, #C4612F ${(currentTime / duration) * 100}%, #FBF9F5 ${(currentTime / duration) * 100}%, #FBF9F5 100%)`,
+                    background: `linear-gradient(to right, #C4612F 0%, #C4612F ${duration ? (currentTime / duration) * 100 : 0}%, rgba(31,36,33,0.12) ${duration ? (currentTime / duration) * 100 : 0}%, rgba(31,36,33,0.12) 100%)`,
                   }}
                 />
-                <div className="flex justify-between text-xs text-[#5C635D] mt-1">
+                <div className="flex justify-between text-xs text-[#5C635D] dark:text-[#b9beb4] mt-1.5 tabular-nums">
                   <span>{formatTime(currentTime)}</span>
                   <span>{formatTime(duration)}</span>
                 </div>
@@ -255,23 +260,29 @@ export const CoursePlayer = () => {
 
               {/* Control Buttons */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <button
                     onClick={handlePlayPause}
-                    className="p-2 hover:bg-[#FBF9F5] rounded-lg transition-colors"
+                    aria-label={isPlaying ? 'Pause' : 'Play'}
+                    className="p-2.5 rounded-xl text-[#1F2421] dark:text-[#ece9e2] hover:bg-[#F2E3D6] dark:hover:bg-[#2c241c] transition-colors"
                   >
                     {isPlaying ? <PauseCircle size={24} /> : <PlayCircle size={24} />}
                   </button>
-                  <button className="p-2 hover:bg-[#FBF9F5] rounded-lg transition-colors">
+                  <button
+                    aria-label="Volume"
+                    className="p-2.5 rounded-xl text-[#5C635D] dark:text-[#b9beb4] hover:bg-[#FBF9F5] dark:hover:bg-[#23261f] hover:text-[#1F2421] dark:hover:text-[#ece9e2] transition-colors"
+                  >
                     <Volume2 size={20} />
                   </button>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <label className="sr-only" htmlFor="playback-speed">Playback speed</label>
                   <select
+                    id="playback-speed"
                     value={playbackSpeed}
                     onChange={(e) => handleSpeedChange(Number(e.target.value))}
-                    className="px-3 py-1.5 bg-[#FBF9F5] border border-[#E7E1D7] rounded-lg text-sm text-[#1F2421]"
+                    className="px-3 py-1.5 bg-[#FBF9F5] dark:bg-[#23261f] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-lg text-sm text-[#1F2421] dark:text-[#ece9e2] focus:outline-none focus:ring-2 focus:ring-[#C4612F] transition-all cursor-pointer"
                   >
                     <option value={0.5}>0.5x</option>
                     <option value={0.75}>0.75x</option>
@@ -282,8 +293,9 @@ export const CoursePlayer = () => {
                   </select>
                   <button
                     onClick={handleAddBookmark}
-                    className="p-2 hover:bg-[#FBF9F5] rounded-lg transition-colors"
-                    title="Add bookmark"
+                    aria-label="Add bookmark"
+                    title="Add bookmark at current time"
+                    className="p-2.5 rounded-xl text-[#5C635D] dark:text-[#b9beb4] hover:bg-[#F2E3D6] dark:hover:bg-[#2c241c] hover:text-[#C4612F] dark:hover:text-[#e8a06f] transition-colors"
                   >
                     <BookmarkPlus size={20} />
                   </button>
@@ -294,16 +306,17 @@ export const CoursePlayer = () => {
 
           {/* Lecture Info */}
           <Card>
-            <h1 className="text-2xl font-serif text-[#1F2421] mb-2">{currentLecture.title}</h1>
+            <h1 className="text-2xl font-serif text-[#1F2421] dark:text-[#ece9e2] mb-2">{currentLecture.title}</h1>
             {currentLecture.description && (
-              <p className="text-[#5C635D] mb-4">{currentLecture.description}</p>
+              <p className="text-[#5C635D] dark:text-[#b9beb4] mb-4 leading-relaxed">{currentLecture.description}</p>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => setShowNotes(!showNotes)}
+                aria-expanded={showNotes}
               >
                 <StickyNote size={16} />
                 Notes ({notes?.data?.length || 0})
@@ -312,6 +325,7 @@ export const CoursePlayer = () => {
                 size="sm"
                 variant="outline"
                 onClick={() => setShowBookmarks(!showBookmarks)}
+                aria-expanded={showBookmarks}
               >
                 <Bookmark size={16} />
                 Bookmarks ({bookmarks?.data?.length || 0})
@@ -324,26 +338,27 @@ export const CoursePlayer = () => {
 
           {/* Notes Section */}
           {showNotes && (
-            <Card>
-              <h3 className="text-lg font-serif text-[#1F2421] mb-3">Lecture Notes</h3>
+            <Card className="animate-fade-in">
+              <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-3">Lecture Notes</h3>
               <div className="space-y-3 mb-4">
                 {notes?.data && notes.data.length > 0 ? (
                   notes.data.map((note) => (
                     <div
                       key={note.id}
-                      className="p-3 bg-[#FBF9F5] rounded-lg"
+                      className="p-3 bg-[#FBF9F5] dark:bg-[#23261f] rounded-xl ring-1 ring-inset ring-[#E7E1D7]/60 dark:ring-[#2c2f2a]"
                     >
                       <button
                         onClick={() => handleSeek(note.timestampSeconds ?? 0)}
-                        className="text-xs text-[#A94E22] dark:text-[#e8a06f] mb-1 hover:underline"
+                        className="text-xs text-[#A94E22] dark:text-[#e8a06f] mb-1 hover:underline tabular-nums inline-flex items-center gap-1"
                       >
+                        <PlayCircle size={11} aria-hidden="true" />
                         {formatTime(note.timestampSeconds ?? 0)}
                       </button>
-                      <p className="text-sm text-[#1F2421]">{note.content}</p>
+                      <p className="text-sm text-[#1F2421] dark:text-[#ece9e2]">{note.content}</p>
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-[#5C635D] text-center py-4">No notes yet</p>
+                  <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] text-center py-4">No notes yet</p>
                 )}
               </div>
 
@@ -352,7 +367,8 @@ export const CoursePlayer = () => {
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
                   placeholder="Add a note at current timestamp..."
-                  className="w-full px-4 py-2.5 bg-[#FFFFFF] border border-[#E7E1D7] rounded-lg text-[#1F2421] placeholder:text-[#5C635D] focus:outline-none focus:ring-2 focus:ring-[#C4612F] resize-none"
+                  aria-label="New note text"
+                  className="w-full px-4 py-2.5 bg-[#FBF9F5] dark:bg-[#23261f] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-xl text-[#1F2421] dark:text-[#ece9e2] placeholder:text-[#5C635D] dark:placeholder:text-[#8a9184] focus:outline-none focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all resize-none"
                   rows={3}
                 />
                 <Button size="sm" onClick={handleAddNote} disabled={!noteText.trim()}>
@@ -364,28 +380,28 @@ export const CoursePlayer = () => {
 
           {/* Bookmarks Section */}
           {showBookmarks && (
-            <Card>
-              <h3 className="text-lg font-serif text-[#1F2421] mb-3">Bookmarks</h3>
+            <Card className="animate-fade-in">
+              <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-3">Bookmarks</h3>
               <div className="space-y-2">
                 {bookmarks?.data && bookmarks.data.length > 0 ? (
                   bookmarks.data.map((bookmark) => (
                     <div
                       key={bookmark.id}
-                      className="flex items-center gap-2 p-2 hover:bg-[#FBF9F5] rounded-lg transition-colors"
+                      className="flex items-center gap-2 p-2 rounded-xl hover:bg-[#FBF9F5] dark:hover:bg-[#23261f] transition-colors"
                     >
                       <button
                         onClick={() => handleSeek(bookmark.timestampSeconds)}
                         className="flex items-center gap-2 flex-1 text-left"
                       >
-                        <Bookmark size={14} className="text-[#C4612F]" />
-                        <span className="text-sm text-[#1F2421]">
+                        <Bookmark size={14} className="text-[#C4612F] dark:text-[#e8a06f]" />
+                        <span className="text-sm text-[#1F2421] dark:text-[#ece9e2]">
                           Bookmark at {formatTime(bookmark.timestampSeconds)}
                         </span>
                       </button>
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-[#5C635D] text-center py-4">No bookmarks yet</p>
+                  <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] text-center py-4">No bookmarks yet</p>
                 )}
               </div>
             </Card>
@@ -422,11 +438,11 @@ export const CoursePlayer = () => {
         </div>
 
         {/* Sidebar - Course Navigation */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0 lg:sticky lg:top-24 lg:self-start">
           {courseId && <MasteryCard courseId={courseId} />}
           {courseId && (
             <Card>
-              <h3 className="text-lg font-serif text-[#1F2421] mb-3">Course actions</h3>
+              <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-3">Course actions</h3>
               <div className="grid grid-cols-2 gap-2">
                 <Button size="sm" variant="outline" as={Link} to={`/ai-tutor/${courseId}`}>
                   AI Tutor
@@ -444,22 +460,29 @@ export const CoursePlayer = () => {
             </Card>
           )}
           <Card>
-            <h3 className="text-lg font-serif text-[#1F2421] mb-4">Course Content</h3>
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+            <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-4 flex items-center gap-2">
+              <ListVideo size={18} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
+              Course Content
+            </h3>
+            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
               {course.modules?.map((module, idx) => (
                 <div key={module.id}>
-                  <h4 className="font-medium text-[#1F2421] mb-2">
-                    {idx + 1}. {module.title}
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-[#5C635D] dark:text-[#b9beb4] mb-1.5 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-[#F2E3D6] dark:bg-[#2c241c] text-[#8A3E1C] dark:text-[#e8a06f] inline-flex items-center justify-center text-[10px] font-bold">
+                      {idx + 1}
+                    </span>
+                    {module.title}
                   </h4>
-                  <ul className="ml-4 space-y-1">
+                  <ul className="ml-2 space-y-0.5 border-l border-[#E7E1D7] dark:border-[#2c2f2a] pl-2">
                     {module.lectures?.map((lecture) => (
                       <li key={lecture.id}>
                         <button
                           onClick={() => navigate(`/courses/${courseId}/play/${lecture.id}`)}
-                          className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors ${
+                          aria-current={lecture.id === lectureId ? 'true' : undefined}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-sm transition-colors ${
                             lecture.id === lectureId
-                              ? 'bg-[#F2E3D6] dark:bg-[#2c241c] text-[#8A3E1C] dark:text-[#e8a06f]'
-                              : 'text-[#5C635D] hover:bg-[#FBF9F5]'
+                              ? 'bg-[#F2E3D6] dark:bg-[#2c241c] text-[#8A3E1C] dark:text-[#e8a06f] font-medium'
+                              : 'text-[#5C635D] dark:text-[#b9beb4] hover:bg-[#FBF9F5] dark:hover:bg-[#23261f] hover:text-[#1F2421] dark:hover:text-[#ece9e2]'
                           }`}
                         >
                           {lecture.title}

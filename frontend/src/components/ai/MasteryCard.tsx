@@ -19,10 +19,10 @@ export const MasteryCard = ({ courseId }: { courseId: string }) => {
   if (isError) {
     return (
       <Card>
-        <h3 className="font-medium text-[#1F2421] mb-1 flex items-center gap-2">
-          <Gauge size={16} className="text-[#C4612F]" /> Mastery
+        <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2] mb-1 flex items-center gap-2">
+          <Gauge size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" /> Mastery
         </h3>
-        <p className="text-sm text-red-700 mb-3">{getApiErrorMessage(error)}</p>
+        <p className="text-sm text-red-700 dark:text-red-400 mb-3">{getApiErrorMessage(error)}</p>
         <button onClick={() => refetch()} className="text-sm text-[#A94E22] dark:text-[#e8a06f] hover:underline">
           Retry
         </button>
@@ -38,20 +38,20 @@ export const MasteryCard = ({ courseId }: { courseId: string }) => {
   return (
     <Card>
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-medium text-[#1F2421] flex items-center gap-2">
-          <Gauge size={16} className="text-[#C4612F]" /> Mastery
+        <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2] flex items-center gap-2">
+          <Gauge size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" /> Mastery
         </h3>
         <Badge variant={data.level === 'advanced' ? 'success' : data.level === 'intermediate' ? 'warning' : 'neutral'}>
           {data.level}
         </Badge>
       </div>
-      <p className="text-sm text-[#5C635D]">
+      <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] leading-relaxed">
         {attempts === 0 || ratio === null
           ? 'Not enough quiz history yet — level falls back to your course progress.'
           : `Based on ${attempts} quiz attempt${attempts === 1 ? '' : 's'} with an average score ratio of ${(ratio! * 100).toFixed(0)}%.`}
       </p>
-      {data.formula && <p className="text-xs text-[#5C635D] mt-2">How it is computed: {data.formula}</p>}
-      {isFetching && <p className="text-xs text-[#5C635D] mt-1">Refreshing…</p>}
+      {data.formula && <p className="text-xs text-[#5C635D]/80 dark:text-[#b9beb4]/80 mt-2">How it is computed: {data.formula}</p>}
+      {isFetching && <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mt-1">Refreshing…</p>}
     </Card>
   );
 };

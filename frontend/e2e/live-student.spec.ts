@@ -5,6 +5,11 @@ import { test, expect, Page } from '@playwright/test';
 // spaced) — stays far under the 10/min/IP auth limit.
 test.describe.configure({ mode: 'serial' });
 
+// API base for browser-context fetches. Defaults to the deployed topology
+// (frontend :3000 → API :4000, which the backend CORS policy allows); override
+// with E2E_API_URL when QA runs against a dev server on another origin.
+const API = process.env.E2E_API_URL || 'http://localhost:4000';
+
 const S = `live${Date.now().toString(36)}`;
 const EMAIL = `${S}@example.com`;
 const PW = 'LiveQa12345!';
@@ -210,7 +215,18 @@ test('student: summary, flashcards, study plan, mastery', async ({ page }) => {
   await page.getByRole('button', { name: 'Flashcards' }).click();
   await expect(page).toHaveURL(/\/flashcards\/[0-9a-f-]{36}$/);
   await page.getByRole('button', { name: /Generate/ }).click();
-  await expect(page.getByText(/Question|Answer/).first()).toBeVisible({ timeout: 60000 });
+  // API rate limiter is a fixed window; the suite's request burst can 429 the
+  // first mutation. Retry the real generation (same tolerance as the summary
+  // step above) — the assertion still requires actual cards to render.
+  await expect(async () => {
+    // Enter via the course detail button — it carries the real module id
+    // (direct /flashcards/:moduleId URLs reject course ids with 404).
+    await page.goto(`/courses/${state.courseId}`);
+    await page.getByRole('button', { name: 'Flashcards' }).click();
+    await expect(page).toHaveURL(/\/flashcards\/[0-9a-f-]{36}$/);
+    await page.getByRole('button', { name: /Generate/ }).click();
+    await expect(page.getByText(/Question|Answer/).first()).toBeVisible({ timeout: 60000 });
+  }).toPass({ timeout: 150000 });
   // study plan via detail button
   await page.goto(`/courses/${state.courseId}`);
   await page.getByRole('button', { name: 'Study Plan' }).click();
@@ -236,14 +252,14 @@ test('student: complete course, certificate, discussions, notifications, logout'
     if (await enrollBtn.isVisible().catch(() => false)) await enrollBtn.click();
   }
   // complete remaining lectures via direct player URLs
-  const lectures: string[] = await page.evaluate(async (courseId) => {
+  const lectures: string[] = await page.evaluate(async ({ api, courseId }) => {
     const token = JSON.parse(localStorage.getItem('auth-storage') || '{}').state?.accessToken;
-    const res = await fetch(`http://localhost:4000/api/v1/courses/${courseId}`, {
+    const res = await fetch(`${api}/api/v1/courses/${courseId}`, {
       headers: { authorization: `Bearer ${token}` },
     });
     const course = await res.json();
     return (course.modules || []).flatMap((m: any) => (m.lectures || []).map((l: any) => l.id));
-  }, state.courseId);
+  }, { api: API, courseId: state.courseId });
   expect(lectures.length).toBeGreaterThanOrEqual(4);
   for (const lecId of lectures) {
     await page.goto(`/courses/${state.courseId}/play/${lecId}`);

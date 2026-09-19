@@ -27,6 +27,6 @@ describe('Card', () => {
         <div>Content</div>
       </Card>
     );
-    expect(container.firstChild).toHaveClass('bg-[#FFFFFF]', 'rounded-xl', 'border');
+    expect(container.firstChild).toHaveClass('bg-[var(--vl-surface)]', 'rounded-[var(--vl-radius-lg)]', 'border');
   });
 });

@@ -4,6 +4,7 @@ import { announcementService, Announcement } from '@/services/announcementServic
 import { authStore } from '@/store/authStore';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
+import { Megaphone } from 'lucide-react';
 
 export const AnnouncementList = ({ courseId, instructorId }: { courseId: string; instructorId?: string }) => {
   const { user } = authStore();
@@ -33,39 +34,42 @@ export const AnnouncementList = ({ courseId, instructorId }: { courseId: string;
 
   return (
     <Card>
-      <h3 className="text-lg font-serif text-[#1F2421] mb-3">Announcements</h3>
+      <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-3 flex items-center gap-2">
+        <Megaphone size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
+        Announcements
+      </h3>
       {canPublish && (
-        <div className="mb-4 border-b border-[#E7E1D7] pb-4">
-          {error && <p className="text-sm text-red-600 mb-2" role="alert">{error}</p>}
+        <div className="mb-4 border-b border-[#E7E1D7] dark:border-[#2c2f2a] pb-4">
+          {error && <p className="text-sm text-red-600 dark:text-red-400 mb-2" role="alert">{error}</p>}
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Announcement title"
             aria-label="Announcement title"
-            className="w-full border border-[#E7E1D7] rounded-lg px-3 py-2 text-sm mb-2"
+            className="w-full bg-[#FBF9F5] dark:bg-[#23261f] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-xl px-3.5 py-2.5 text-sm text-[#1F2421] dark:text-[#ece9e2] placeholder:text-[#5C635D] dark:placeholder:text-[#8a9184] focus:outline-none focus:bg-[#FFFFFF] dark:focus:bg-[#1a1d17] focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all mb-2"
           />
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder="Announcement body"
             aria-label="Announcement body"
-            className="w-full border border-[#E7E1D7] rounded-lg px-3 py-2 text-sm mb-2"
+            className="w-full bg-[#FBF9F5] dark:bg-[#23261f] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-xl px-3.5 py-2.5 text-sm text-[#1F2421] dark:text-[#ece9e2] placeholder:text-[#5C635D] dark:placeholder:text-[#8a9184] focus:outline-none focus:bg-[#FFFFFF] dark:focus:bg-[#1a1d17] focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all mb-2 resize-none"
             rows={2}
           />
-          <Button size="sm" disabled={!title.trim() || !body.trim()} onClick={() => create.mutate()}>Publish announcement</Button>
+          <Button size="sm" disabled={!title.trim() || !body.trim()} onClick={() => create.mutate()} loading={create.isPending}>Publish announcement</Button>
         </div>
       )}
       {isLoading ? (
-        <p className="text-sm text-[#5C635D]">Loading announcements...</p>
+        <p className="text-sm text-[#5C635D] dark:text-[#b9beb4]">Loading announcements...</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-[#5C635D]">No announcements yet.</p>
+        <p className="text-sm text-[#5C635D] dark:text-[#b9beb4]">No announcements yet.</p>
       ) : (
         <ul className="space-y-3">
           {items.map((a) => (
-            <li key={a.id} className="border-b border-[#E7E1D7] last:border-b-0 pb-3 last:pb-0">
-              <p className="font-medium text-[#1F2421]">{a.title}</p>
-              <p className="text-sm text-[#5C635D]">{a.body}</p>
-              <p className="text-xs text-[#5C635D]">By {a.author_name ?? a.author_id} • {new Date(a.created_at).toLocaleString()}</p>
+            <li key={a.id} className="border-b border-[#E7E1D7] dark:border-[#2c2f2a] last:border-b-0 pb-3 last:pb-0">
+              <p className="font-medium text-[#1F2421] dark:text-[#ece9e2]">{a.title}</p>
+              <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mt-0.5">{a.body}</p>
+              <p className="text-xs text-[#5C635D]/80 dark:text-[#b9beb4]/80 mt-1">By {a.author_name ?? a.author_id} • {new Date(a.created_at).toLocaleString()}</p>
             </li>
           ))}
         </ul>

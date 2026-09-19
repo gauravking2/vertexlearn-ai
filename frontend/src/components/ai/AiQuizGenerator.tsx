@@ -36,7 +36,7 @@ export const AiQuizGenerator = ({
   if (lectures.length === 0) {
     return (
       <Card>
-        <p className="text-sm text-[#5C635D]">
+        <p className="text-sm text-[#5C635D] dark:text-[#b9beb4]">
           Add a lecture to this course first — AI quizzes are generated per lecture from its transcript.
         </p>
       </Card>
@@ -45,21 +45,24 @@ export const AiQuizGenerator = ({
 
   return (
     <Card>
-      <h3 className="font-medium text-[#1F2421] flex items-center gap-2 mb-1">
-        <Brain size={16} className="text-[#C4612F]" /> Generate AI quiz
+      <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2] flex items-center gap-2 mb-1">
+        <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center" aria-hidden="true">
+          <Brain size={14} className="text-white" />
+        </span>
+        Generate AI quiz
       </h3>
-      <p className="text-sm text-[#5C635D] mb-3">
+      <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-3">
         Drafts are created as <span className="font-medium">pending_review</span> and never appear to
         students until approved.
       </p>
       <form onSubmit={handleGenerate} className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-sm font-medium text-[#1F2421] mb-1.5" htmlFor="ai-quiz-lecture">Lecture</label>
+          <label className="block text-sm font-medium text-[#1F2421] dark:text-[#ece9e2] mb-1.5" htmlFor="ai-quiz-lecture">Lecture</label>
           <select
             id="ai-quiz-lecture"
             value={lectureId}
             onChange={(e) => setLectureId(e.target.value)}
-            className="w-full px-4 py-2.5 border border-[#E7E1D7] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4612F]"
+            className="w-full px-4 py-2.5 bg-[#FBF9F5] dark:bg-[#23261f] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-xl text-[#1F2421] dark:text-[#ece9e2] focus:outline-none focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all cursor-pointer"
           >
             {lectures.map((l) => (
               <option key={l.id} value={l.id}>{l.title}</option>
@@ -80,9 +83,9 @@ export const AiQuizGenerator = ({
           Generate
         </Button>
       </form>
-      {isError && <p className="text-sm text-red-700 mt-2">{getApiErrorMessage(error)}</p>}
+      {isError && <p className="text-sm text-red-700 dark:text-red-400 mt-2">{getApiErrorMessage(error)}</p>}
       {isSuccess && data && (
-        <p className="text-sm text-green-700 mt-2">
+        <p className="text-sm text-green-700 dark:text-green-400 mt-2">
           Draft created ({(data as { id?: string }).id ? `id ${(data as { id: string }).id.slice(0, 8)}…` : 'pending_review'}) — review it on the AI drafts page.
         </p>
       )}

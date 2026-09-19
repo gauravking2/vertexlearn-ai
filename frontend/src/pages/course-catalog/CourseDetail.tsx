@@ -11,7 +11,7 @@ import { AnnouncementList } from '@/components/announcements/AnnouncementList';
 import { CourseReviews } from '@/components/reviews/CourseReviews';
 import { authStore } from '@/store/authStore';
 import { getApiErrorMessage } from '@/components/common/apiError';
-import { BookOpen, Clock, BarChart3, Award, PlayCircle } from 'lucide-react';
+import { BookOpen, Clock, BarChart3, Award, PlayCircle, Users, Star } from 'lucide-react';
 import { categoryCover, safePercent, displayPercent, validId } from '@/utils/model';
 
 export const CourseDetail = () => {
@@ -31,7 +31,7 @@ export const CourseDetail = () => {
   if (isError) {
     return (
       <Card>
-        <p className="text-sm text-red-700 mb-2" role="alert">{getApiErrorMessage(error)}</p>
+        <p className="text-sm text-red-700 dark:text-red-400 mb-2" role="alert">{getApiErrorMessage(error)}</p>
         <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
       </Card>
     );
@@ -91,18 +91,18 @@ export const CourseDetail = () => {
           <div className="absolute inset-0 opacity-35" aria-hidden="true" style={{ background: 'radial-gradient(500px 180px at 85% 0%, rgba(255,255,255,0.30), transparent)' }} />
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {course.category && (
-              <span className="px-3 py-1 bg-white/15 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm">
+              <span className="px-3 py-1 bg-black/25 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm">
                 {course.category}
               </span>
             )}
             {course.difficulty && (
-              <span className="px-3 py-1 bg-white/15 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm capitalize">
+              <span className="px-3 py-1 bg-black/25 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm capitalize">
                 {course.difficulty}
               </span>
             )}
             {ratingCount > 0 && (
-              <span className="px-3 py-1 bg-white/15 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm">
-                ★ {rating.toFixed(1)} ({ratingCount})
+              <span className="px-3 py-1 bg-black/25 text-white text-xs font-medium rounded-full border border-white/20 backdrop-blur-sm inline-flex items-center gap-1">
+                <Star size={11} aria-hidden="true" /> {rating.toFixed(1)} ({ratingCount})
               </span>
             )}
           </div>
@@ -115,24 +115,28 @@ export const CourseDetail = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6 min-w-0">
           {/* Course Info */}
           <Card>
             <div className="flex flex-wrap gap-x-6 gap-y-3">
-              <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-                <BarChart3 size={16} className="text-[#C4612F]" aria-hidden="true" />
+              <div className="flex items-center gap-2 text-sm text-[#5C635D] dark:text-[#b9beb4]">
+                <BarChart3 size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
                 <span className="capitalize">{course.difficulty || 'Beginner'}</span>
               </div>
-              <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-                <Clock size={16} className="text-[#C4612F]" aria-hidden="true" />
+              <div className="flex items-center gap-2 text-sm text-[#5C635D] dark:text-[#b9beb4]">
+                <Clock size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
                 <span>{course.duration || 'Self-paced'}</span>
               </div>
-              <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-                <BookOpen size={16} className="text-[#C4612F]" aria-hidden="true" />
+              <div className="flex items-center gap-2 text-sm text-[#5C635D] dark:text-[#b9beb4]">
+                <BookOpen size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
                 <span>{lectureCount} lecture{lectureCount === 1 ? '' : 's'}</span>
               </div>
-              <div className="flex items-center gap-2 text-sm text-[#5C635D]">
-                <Award size={16} className="text-[#C4612F]" aria-hidden="true" />
+              <div className="flex items-center gap-2 text-sm text-[#5C635D] dark:text-[#b9beb4]">
+                <Users size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
+                <span>{course.enrollmentCount || 0} enrolled</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-[#5C635D] dark:text-[#b9beb4]">
+                <Award size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
                 <span>Certificate on completion</span>
               </div>
             </div>
@@ -141,15 +145,16 @@ export const CourseDetail = () => {
           {/* Instructor */}
           {(course as any).instructorName && (
             <Card>
-              <h3 className="text-lg font-serif text-[#1F2421] mb-2">Instructor</h3>
+              <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-2">Instructor</h3>
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#F2E3D6] rounded-full flex items-center justify-center" aria-hidden="true">
+                <div className="w-12 h-12 bg-gradient-to-br from-[#F2E3D6] to-[#EAD3BE] dark:from-[#2c241c] dark:to-[#23261f] ring-1 ring-[#E7E1D7] dark:ring-[#2c2f2a] rounded-full flex items-center justify-center" aria-hidden="true">
                   <span className="text-[#8A3E1C] dark:text-[#e8a06f] font-medium">
                     {String((course as any).instructorName).charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <div>
-                  <p className="font-medium text-[#1F2421]">{(course as any).instructorName}</p>
+                  <p className="font-medium text-[#1F2421] dark:text-[#ece9e2]">{(course as any).instructorName}</p>
+                  <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">Course instructor</p>
                 </div>
               </div>
             </Card>
@@ -158,29 +163,32 @@ export const CourseDetail = () => {
           {/* Course Content */}
           {course.modules && course.modules.length > 0 ? (
             <Card>
-              <h3 className="text-lg font-serif text-[#1F2421] mb-4">Course Content</h3>
+              <h3 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-4">Course Content</h3>
               <div className="space-y-3">
                 {course.modules.map((module: any, idx: number) => (
-                  <div key={module.id} className="border-b border-[#E7E1D7] last:border-b-0 pb-3 last:pb-0">
-                    <div className="flex items-start justify-between mb-2">
-                      <h4 className="font-medium text-[#1F2421]">
-                        {idx + 1}. {module.title}
+                  <div key={module.id} className="border-b border-[#E7E1D7] dark:border-[#2c2f2a] last:border-b-0 pb-3 last:pb-0">
+                    <div className="flex items-start justify-between mb-2 gap-2">
+                      <h4 className="font-medium text-[#1F2421] dark:text-[#ece9e2] flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-md bg-[#F2E3D6] dark:bg-[#2c241c] text-[#8A3E1C] dark:text-[#e8a06f] inline-flex items-center justify-center text-[10px] font-bold shrink-0" aria-hidden="true">
+                          {idx + 1}
+                        </span>
+                        {module.title}
                       </h4>
                       <Badge variant="neutral">{module.lectures?.length || 0} lectures</Badge>
                     </div>
                     {module.description && (
-                      <p className="text-sm text-[#5C635D] mb-2">{module.description}</p>
+                      <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-2">{module.description}</p>
                     )}
                     {module.lectures && module.lectures.length > 0 ? (
-                      <ul className="ml-4 space-y-1">
+                      <ul className="ml-2 space-y-1">
                         {module.lectures.map((lecture: any) =>
                           lecture?.id ? (
-                            <li key={lecture.id} className="text-sm text-[#5C635D] flex items-center gap-2">
-                              <PlayCircle size={14} className="text-[#C4612F] shrink-0" aria-hidden="true" />
+                            <li key={lecture.id} className="text-sm text-[#5C635D] dark:text-[#b9beb4] flex items-center gap-2">
+                              <PlayCircle size={14} className="text-[#C4612F] dark:text-[#e8a06f] shrink-0" aria-hidden="true" />
                               {isEnrolled ? (
                                 <Link
                                   to={`/courses/${course.id}/play/${lecture.id}`}
-                                  className="hover:text-[#C4612F] hover:underline"
+                                  className="hover:text-[#C4612F] dark:hover:text-[#e8a06f] hover:underline"
                                 >
                                   {lecture.title}
                                 </Link>
@@ -192,7 +200,7 @@ export const CourseDetail = () => {
                         )}
                       </ul>
                     ) : (
-                      <p className="text-sm text-[#5C635D] ml-4">Lectures coming soon.</p>
+                      <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] ml-2">Lectures coming soon.</p>
                     )}
                   </div>
                 ))}
@@ -200,7 +208,7 @@ export const CourseDetail = () => {
             </Card>
           ) : (
             <Card>
-              <p className="text-sm text-[#5C635D] text-center py-6">Curriculum is being prepared for this course.</p>
+              <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] text-center py-6">Curriculum is being prepared for this course.</p>
             </Card>
           )}
           {canSeeAnnouncements && (
@@ -213,35 +221,40 @@ export const CourseDetail = () => {
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0 lg:sticky lg:top-24 lg:self-start">
           {isEnrolled && id && <MasteryCard courseId={id} />}
           <Card>
             {isEnrolled ? (
               <div className="space-y-3">
-                <div className="text-center py-4">
-                  <div className="w-16 h-16 bg-[#F2E3D6] rounded-full flex items-center justify-center mx-auto mb-3" aria-hidden="true">
-                    <Award className="text-[#C4612F]" size={28} />
+                <div className="text-center py-4 border-b border-[#E7E1D7] dark:border-[#2c2f2a]">
+                  <div className="relative inline-block mb-3">
+                    <div aria-hidden="true" className="absolute -inset-3 rounded-full bg-[radial-gradient(circle,rgba(196,97,47,0.12),transparent_70%)]" />
+                    <div className="relative w-16 h-16 bg-gradient-to-br from-[#F2E3D6] to-[#FBF9F5] dark:from-[#2c241c] dark:to-[#23261f] ring-1 ring-[#E7E1D7] dark:ring-[#2c2f2a] rounded-full flex items-center justify-center">
+                      <Award className="text-[#C4612F] dark:text-[#e8a06f]" size={28} aria-hidden="true" />
+                    </div>
                   </div>
-                  <p className="text-sm text-[#5C635D] mb-2">You're enrolled</p>
-                  <p className="text-2xl font-serif text-[#1F2421]">{displayPercent(progressPercent)}</p>
-                  <p className="text-xs text-[#5C635D]">{progressPercent >= 100 ? 'Completed' : 'Complete'}</p>
+                  <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-1">You're enrolled</p>
+                  <p className="text-2xl font-serif text-[#1F2421] dark:text-[#ece9e2]">{displayPercent(progressPercent)}</p>
+                  <div className="mt-3 px-2">
+                    <ProgressBarInline pct={progressPercent} />
+                  </div>
                 </div>
                 {firstLecture?.id ? (
                   <Button
                     fullWidth
                     onClick={() => navigate(`/courses/${course.id}/play/${firstLecture.id}`)}
                   >
-                    <PlayCircle size={18} />
+                    <PlayCircle size={18} aria-hidden="true" />
                     {progressPercent > 0 ? 'Continue Learning' : 'Start Course'}
                   </Button>
                 ) : (
-                  <p className="text-sm text-[#5C635D] text-center">Lectures coming soon.</p>
+                  <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] text-center">Lectures coming soon.</p>
                 )}
                 {isEnrolled && (
                   <Button
                     fullWidth
                     onClick={() => navigate(`/ai-tutor/${course.id}`)}
-                    className="!bg-gradient-to-r !from-[#7C3AED] !to-[#6D28D9] hover:!shadow-glow"
+                    className="vl-ai-chip !bg-none hover:!bg-none"
                   >
                     AI Tutor
                   </Button>
@@ -289,13 +302,16 @@ export const CourseDetail = () => {
             ) : (
               <div className="space-y-4">
                 <div className="text-center py-4">
-                  <p className="text-sm text-[#5C635D] mb-2">Ready to start learning?</p>
+                  <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-[#F2E3D6] to-[#FBF9F5] dark:from-[#2c241c] dark:to-[#23261f] ring-1 ring-[#E7E1D7] dark:ring-[#2c2f2a] flex items-center justify-center" aria-hidden="true">
+                    <BookOpen className="text-[#C4612F] dark:text-[#e8a06f]" size={24} />
+                  </div>
+                  <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-2">Ready to start learning?</p>
                 </div>
                 {enrollError && (
-                  <p className="text-sm text-red-700" role="alert">{enrollError}</p>
+                  <p className="text-sm text-red-700 dark:text-red-400" role="alert">{enrollError}</p>
                 )}
                 {enrollNotice && (
-                  <p className="text-sm text-green-700" role="status">{enrollNotice}</p>
+                  <p className="text-sm text-green-700 dark:text-green-400" role="status">{enrollNotice}</p>
                 )}
                 <Button fullWidth onClick={handleEnroll} loading={enrolling}>
                   Enroll Now
@@ -306,10 +322,10 @@ export const CourseDetail = () => {
 
           <Card>
             <div className="flex items-start gap-3">
-              <Award className="text-[#C4612F] mt-0.5" size={20} aria-hidden="true" />
+              <Award className="text-[#C4612F] dark:text-[#e8a06f] mt-0.5" size={20} aria-hidden="true" />
               <div>
-                <h4 className="font-medium text-[#1F2421] mb-1">Earn a Certificate</h4>
-                <p className="text-sm text-[#5C635D]">
+                <h4 className="font-medium text-[#1F2421] dark:text-[#ece9e2] mb-1">Earn a Certificate</h4>
+                <p className="text-sm text-[#5C635D] dark:text-[#b9beb4]">
                   Complete all requirements to earn your certificate
                 </p>
               </div>
@@ -320,3 +336,13 @@ export const CourseDetail = () => {
     </div>
   );
 };
+
+// Local thin progress bar for the sidebar (visual only; same clamp math).
+const ProgressBarInline = ({ pct }: { pct: number }) => (
+  <div className="w-full h-2 bg-[#FBF9F5] dark:bg-[#23261f] rounded-full overflow-hidden ring-1 ring-inset ring-[#E7E1D7]/80 dark:ring-[#2c2f2a]">
+    <div
+      className="h-full bg-gradient-to-r from-[#C4612F] via-[#D3723F] to-[#A94E22] rounded-full transition-all duration-500"
+      style={{ width: `${pct}%` }}
+    />
+  </div>
+);

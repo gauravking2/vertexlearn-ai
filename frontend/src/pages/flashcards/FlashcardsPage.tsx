@@ -24,12 +24,12 @@ export const FlashcardsPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
+          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] dark:text-[#ece9e2] mb-2">
             Flashcards
           </h1>
-          <p className="text-[#5C635D]">AI-generated flashcards for quick review</p>
+          <p className="text-[#5C635D] dark:text-[#b9beb4]">AI-generated flashcards for quick review</p>
         </div>
         <Button variant="ghost" size="sm" as={Link} to="/dashboard">
           Back to dashboard
@@ -37,18 +37,18 @@ export const FlashcardsPage = () => {
       </div>
 
       <Card>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#F2E3D6] rounded-full flex items-center justify-center">
-              <Layers className="text-[#C4612F]" size={20} />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F2E3D6] to-[#FBF9F5] dark:from-[#2c241c] dark:to-[#23261f] ring-1 ring-[#E7E1D7]/80 dark:ring-[#2c2f2a] flex items-center justify-center" aria-hidden="true">
+              <Layers className="text-[#C4612F] dark:text-[#e8a06f]" size={20} />
             </div>
             <div>
-              <h3 className="font-medium text-[#1F2421]">Module flashcards</h3>
-              <p className="text-sm text-[#5C635D]">Tap a card to flip it.</p>
+              <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2]">Module flashcards</h3>
+              <p className="text-sm text-[#5C635D] dark:text-[#b9beb4]">Tap a card to flip it.</p>
             </div>
           </div>
           <Button onClick={handleGenerate} loading={isPending} variant="outline">
-            <RefreshCw size={16} />
+            <RefreshCw size={16} aria-hidden="true" />
             {generatedCards.length > 0 ? 'Regenerate' : 'Generate'}
           </Button>
         </div>
@@ -67,24 +67,19 @@ export const FlashcardsPage = () => {
       )}
 
       {generatedCards.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 vl-stagger">
           {generatedCards.map((card: any) => (
             <button
               key={card.id}
               onClick={() => toggleFlip(card.id)}
-              className="text-left bg-[#FFFFFF] border border-[#E7E1D7] rounded-xl p-6 hover:shadow-md transition-all min-h-[160px]"
+              aria-pressed={!!flipped[card.id]}
+              className="text-left bg-[#FFFFFF] dark:bg-[#1a1d17] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-2xl p-6 shadow-soft hover:shadow-lift hover:-translate-y-0.5 transition-all min-h-[160px] flex flex-col"
             >
-              {flipped[card.id] ? (
-                <div>
-                  <p className="text-xs text-[#A94E22] dark:text-[#e8a06f] mb-2">Answer</p>
-                  <p className="text-[#1F2421]">{card.back}</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-xs text-[#A94E22] dark:text-[#e8a06f] mb-2">Question</p>
-                  <p className="text-[#1F2421]">{card.front}</p>
-                </div>
-              )}
+              <p className="vl-eyebrow text-[#C4612F] dark:text-[#e8a06f] mb-2">
+                {flipped[card.id] ? 'Answer' : 'Question'}
+              </p>
+              <p className="text-[#1F2421] dark:text-[#ece9e2] leading-relaxed">{flipped[card.id] ? card.back : card.front}</p>
+              <span className="mt-auto pt-3 text-xs text-[#5C635D] dark:text-[#b9beb4]">Tap to flip</span>
             </button>
           ))}
         </div>

@@ -96,31 +96,31 @@ export const InstructorAssignments = () => {
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" as={Link} to="/instructor/courses">
-        <ArrowLeft size={16} /> Back to courses
+        <ArrowLeft size={16} aria-hidden="true" /> Back to courses
       </Button>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
-            Course <span className="italic text-[#C4612F]">Assignments</span>
+          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] dark:text-[#ece9e2] mb-2">
+            Course <span className="italic text-[#C4612F] dark:text-[#e8a06f]">Assignments</span>
           </h1>
-          <p className="text-[#5C635D]">Manage assignments for {(course as any)?.title ?? 'this course'}</p>
+          <p className="text-[#5C635D] dark:text-[#b9beb4]">Manage assignments for {(course as any)?.title ?? 'this course'}</p>
         </div>
         <Button onClick={() => { resetForm(); setShowForm((v) => !v); }}>
-          <Plus size={16} /> New assignment
+          <Plus size={16} aria-hidden="true" /> New assignment
         </Button>
       </div>
 
       {showForm && (
-        <Card>
+        <Card className="animate-fade-in">
           <form onSubmit={handleSubmit} className="space-y-3">
             <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
             <div>
-              <label className="block text-sm font-medium text-[#1F2421] mb-1.5" htmlFor="assignment-description">Description</label>
+              <label className="block text-sm font-medium text-[#1F2421] dark:text-[#ece9e2] mb-1.5" htmlFor="assignment-description">Description</label>
               <textarea
                 id="assignment-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-4 py-2.5 border border-[#E7E1D7] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4612F] resize-none"
+                className="w-full px-4 py-2.5 bg-[#FBF9F5] dark:bg-[#23261f] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-xl text-[#1F2421] dark:text-[#ece9e2] focus:outline-none focus:bg-[#FFFFFF] dark:focus:bg-[#1a1d17] focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all resize-none"
                 rows={3}
               />
             </div>
@@ -128,8 +128,8 @@ export const InstructorAssignments = () => {
               <Input label="Due date (optional)" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
               <Input label="Max score" type="number" min={1} value={maxScore} onChange={(e) => setMaxScore(e.target.value)} required />
             </div>
-            {formError && <p className="text-sm text-red-700">{formError}</p>}
-            {createFailed && <p className="text-sm text-red-700">{getApiErrorMessage(createError)}</p>}
+            {formError && <p className="text-sm text-red-700 dark:text-red-400">{formError}</p>}
+            {createFailed && <p className="text-sm text-red-700 dark:text-red-400">{getApiErrorMessage(createError)}</p>}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={resetForm}>Cancel</Button>
               <Button type="submit" loading={creating || updating}>
@@ -142,7 +142,7 @@ export const InstructorAssignments = () => {
 
       {isError && (
         <Card>
-          <p className="text-sm text-red-700 mb-2">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-red-700 dark:text-red-400 mb-2">{getApiErrorMessage(error)}</p>
           <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
         </Card>
       )}
@@ -154,23 +154,28 @@ export const InstructorAssignments = () => {
       )}
 
       {!isError && assignments.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-3 vl-stagger">
           {assignments.map((a: any) => {
             const due = a.dueAt;
+            const overdue = due && new Date(due) < new Date();
             return (
-              <Card key={a.id}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <h3 className="font-medium text-[#1F2421]">{a.title}</h3>
-                    {a.description && <p className="text-sm text-[#5C635D] line-clamp-2">{a.description}</p>}
-                    <div className="flex gap-2 mt-1">
+              <Card key={a.id} variant="elevated" className="relative overflow-hidden">
+                <span
+                  aria-hidden="true"
+                  className={`absolute left-0 top-0 bottom-0 w-1 ${overdue ? 'bg-gradient-to-b from-red-500 to-red-700' : 'bg-gradient-to-b from-[#C4612F] to-[#A94E22]'}`}
+                />
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pl-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2]">{a.title}</h3>
+                    {a.description && <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] line-clamp-2">{a.description}</p>}
+                    <div className="flex flex-wrap gap-2 mt-1.5">
                       <Badge variant="neutral">Max {a.maxScore}</Badge>
-                      {due && <Badge variant="neutral">Due {new Date(due).toLocaleDateString()}</Badge>}
+                      {due && <Badge variant={overdue ? 'error' : 'neutral'}>Due {new Date(due).toLocaleDateString()}</Badge>}
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <Button size="sm" variant="outline" onClick={() => startEdit(a)}>
-                      <Pencil size={14} /> Edit
+                      <Pencil size={14} aria-hidden="true" /> Edit
                     </Button>
                     <Button size="sm" variant="outline" as={Link} to={`/instructor/assignments/${a.id}/submissions`}>
                       Review

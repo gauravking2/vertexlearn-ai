@@ -29,7 +29,7 @@ export const LectureTranscriptEditor = ({ lectureId, lectureTitle }: { lectureId
     return (
       <button
         onClick={() => { reset(); setOpen(true); }}
-        className="text-xs text-[#5C635D] hover:text-[#C4612F] hover:underline flex items-center gap-1 mt-1"
+        className="text-xs text-[#5C635D] dark:text-[#b9beb4] hover:text-[#C4612F] dark:hover:text-[#e8a06f] hover:underline flex items-center gap-1 mt-1 transition-colors"
       >
         <FileText size={12} aria-hidden="true" /> Add/edit transcript
       </button>
@@ -37,8 +37,8 @@ export const LectureTranscriptEditor = ({ lectureId, lectureTitle }: { lectureId
   }
 
   return (
-    <form onSubmit={handleSave} className="mt-2 p-3 bg-[#FBF9F5] rounded-lg space-y-2">
-      <label className="block text-xs font-medium text-[#1F2421]" htmlFor={`tx-${lectureId}`}>
+    <form onSubmit={handleSave} className="mt-2 p-3.5 bg-[#FBF9F5] dark:bg-[#23261f] rounded-xl ring-1 ring-inset ring-[#E7E1D7]/60 dark:ring-[#2c2f2a] space-y-2">
+      <label className="block text-xs font-medium text-[#1F2421] dark:text-[#ece9e2]" htmlFor={`tx-${lectureId}`}>
         Transcript for “{lectureTitle}” (powers AI Tutor, summaries, AI quizzes)
       </label>
       <textarea
@@ -46,13 +46,13 @@ export const LectureTranscriptEditor = ({ lectureId, lectureTitle }: { lectureId
         value={transcript}
         onChange={(e) => setTranscript(e.target.value)}
         placeholder="Paste the lecture transcript or detailed notes here..."
-        className="w-full px-3 py-2 bg-[#FFFFFF] border border-[#E7E1D7] rounded-lg text-sm text-[#1F2421] placeholder:text-[#5C635D] focus:outline-none focus:ring-2 focus:ring-[#C4612F] resize-none"
+        className="w-full px-3 py-2 bg-[#FFFFFF] dark:bg-[#1a1d17] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-lg text-sm text-[#1F2421] dark:text-[#ece9e2] placeholder:text-[#5C635D] dark:placeholder:text-[#8a9184] focus:outline-none focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all resize-none"
         rows={4}
       />
-      {formError && <p className="text-xs text-red-700">{formError}</p>}
-      {isError && <p className="text-xs text-red-700">{getApiErrorMessage(error)}</p>}
+      {formError && <p className="text-xs text-red-700 dark:text-red-400">{formError}</p>}
+      {isError && <p className="text-xs text-red-700 dark:text-red-400">{getApiErrorMessage(error)}</p>}
       {data && (
-        <p className="text-xs text-green-700" role="status">
+        <p className="text-xs text-green-700 dark:text-green-400" role="status">
           Indexed {data.chunks} chunk{(data.chunks ?? 0) === 1 ? '' : 's'} — AI features are live for this lecture.
         </p>
       )}

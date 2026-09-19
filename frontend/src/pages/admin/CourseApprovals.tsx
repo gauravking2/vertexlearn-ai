@@ -4,7 +4,9 @@ import { adminService } from '@/services/adminService';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { EmptyState } from '@/components/common/EmptyState';
 import { getApiErrorMessage } from '@/components/common/apiError';
+import { BookMarked, Check, X, UserRound } from 'lucide-react';
 
 export const CourseApprovals = () => {
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export const CourseApprovals = () => {
   if (isError) {
     return (
       <Card>
-        <p className="text-center text-red-600 py-8">Failed to load pending courses ({getApiErrorMessage(queryError)}).</p>
+        <p className="text-center text-red-600 dark:text-red-400 py-8">Failed to load pending courses ({getApiErrorMessage(queryError)}).</p>
         <div className="text-center pb-6"><Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button></div>
       </Card>
     );
@@ -41,23 +43,46 @@ export const CourseApprovals = () => {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-3xl font-serif text-[#1F2421]">Course <span className="italic text-[#C4612F]">Approvals</span></h1>
-      {error && <Card><p className="text-sm text-red-600" role="alert">{error}</p></Card>}
-      {notice && <Card><p className="text-sm text-green-700" role="status">{notice}</p></Card>}
+      <div>
+        <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] dark:text-[#ece9e2]">
+          Course <span className="italic text-[#C4612F] dark:text-[#e8a06f]">Approvals</span>
+        </h1>
+        <p className="text-[#5C635D] dark:text-[#b9beb4] mt-1">Review and decide on submitted courses</p>
+      </div>
+      {error && <Card><p className="text-sm text-red-600 dark:text-red-400" role="alert">{error}</p></Card>}
+      {notice && <Card><p className="text-sm text-green-700 dark:text-green-400" role="status">{notice}</p></Card>}
       {courses.length === 0 ? (
-        <Card><p className="text-center text-[#5C635D] py-8">No pending courses. The queue is empty.</p></Card>
+        <Card>
+          <EmptyState
+            icon={BookMarked}
+            title="No pending courses"
+            description="The approval queue is empty — new submissions will appear here."
+          />
+        </Card>
       ) : (
-        courses.map((c: any) => (
-          <Card key={c.id}>
-            <h3 className="font-medium text-[#1F2421]">{c.title}</h3>
-            <p className="text-sm text-[#5C635D] mb-2">{c.description}</p>
-            <p className="text-xs text-[#5C635D] mb-3">Instructor: {c.instructor_name} ({c.instructor_email})</p>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => decision.mutate({ id: c.id, d: 'approved' })}>Approve</Button>
-              <Button size="sm" variant="outline" onClick={() => decision.mutate({ id: c.id, d: 'rejected' })}>Reject</Button>
-            </div>
-          </Card>
-        ))
+        <div className="space-y-3 vl-stagger">
+          {courses.map((c: any) => (
+            <Card key={c.id} variant="elevated" className="relative overflow-hidden">
+              <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-amber-400 to-amber-600" />
+              <div className="pl-2">
+                <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2]">{c.title}</h3>
+                <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-2">{c.description}</p>
+                <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mb-3 flex items-center gap-1.5">
+                  <UserRound size={12} aria-hidden="true" />
+                  Instructor: {c.instructor_name} ({c.instructor_email})
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => decision.mutate({ id: c.id, d: 'approved' })} loading={decision.isPending}>
+                    <Check size={14} aria-hidden="true" /> Approve
+                  </Button>
+                  <Button size="sm" variant="danger" onClick={() => decision.mutate({ id: c.id, d: 'rejected' })}>
+                    <X size={14} aria-hidden="true" /> Reject
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );

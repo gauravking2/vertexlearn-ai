@@ -65,19 +65,22 @@ export const AIQuizReview = () => {
   return (
     <div className="space-y-6">
       <div>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
-            AI Quiz <span className="italic text-[#C4612F]">Review</span>
-          </h1>
-          <p className="text-[#5C635D]">
-            Review assistant-drafted quizzes assembled from lecture material. Approved drafts become active quizzes;
-            rejected drafts are discarded. Students never see pending drafts.
-          </p>
+        <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] dark:text-[#ece9e2] mb-2">
+          AI Quiz <span className="italic text-[#C4612F] dark:text-[#e8a06f]">Review</span>
+        </h1>
+        <p className="text-[#5C635D] dark:text-[#b9beb4] max-w-3xl">
+          Review assistant-drafted quizzes assembled from lecture material. Approved drafts become active quizzes;
+          rejected drafts are discarded. Students never see pending drafts.
+        </p>
       </div>
 
       {/* GENERATE trigger: Lecture → Generate AI Quiz → pending_review */}
       <Card>
-        <h3 className="font-medium text-[#1F2421] mb-1">Generate a draft from a lecture</h3>
-        <p className="text-sm text-[#5C635D] mb-3">
+        <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2] mb-1 flex items-center gap-2">
+          <Brain size={16} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
+          Generate a draft from a lecture
+        </h3>
+        <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-3">
           Prefer the course quiz page (it lists lectures for you). This manual form accepts a lecture ID directly.
         </p>
         <form onSubmit={handleGenerate} className="flex flex-wrap items-end gap-3">
@@ -89,9 +92,9 @@ export const AIQuizReview = () => {
           </div>
           <Button type="submit" loading={generating}>Generate</Button>
         </form>
-        {formError && <p className="text-sm text-red-700 mt-2">{formError}</p>}
-        {generateFailed && <p className="text-sm text-red-700 mt-2">{getApiErrorMessage(generateError)}</p>}
-        {generated && <p className="text-sm text-green-700 mt-2">Draft created as pending_review — it appears in the list below.</p>}
+        {formError && <p className="text-sm text-red-700 dark:text-red-400 mt-2">{formError}</p>}
+        {generateFailed && <p className="text-sm text-red-700 dark:text-red-400 mt-2">{getApiErrorMessage(generateError)}</p>}
+        {generated && <p className="text-sm text-green-700 dark:text-green-400 mt-2">Draft created as pending_review — it appears in the list below.</p>}
       </Card>
 
       {drafts.length === 0 ? (
@@ -103,16 +106,16 @@ export const AIQuizReview = () => {
           />
         </Card>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 vl-stagger">
           {drafts.map((draft: any) => {
             const questions = parseQuestions(draft);
             const isPending = draft.status === 'pending_review';
             return (
-              <Card key={draft.id}>
-                <div className="flex items-start justify-between gap-4 mb-3">
+              <Card key={draft.id} variant="elevated">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
                   <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium text-[#1F2421]">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2]">
                         {(draft.lecture_id ?? draft.lectureId) ? `Draft for lecture ${String(draft.lecture_id ?? draft.lectureId).slice(0, 8)}…` : 'AI quiz draft'}
                       </h3>
                       <Badge
@@ -121,47 +124,47 @@ export const AIQuizReview = () => {
                         {draft.status === 'pending_review' ? 'Pending review' : draft.status}
                       </Badge>
                     </div>
-                    <p className="text-sm text-[#5C635D]">
+                    <p className="text-sm text-[#5C635D] dark:text-[#b9beb4]">
                       {questions.length} question{questions.length !== 1 ? 's' : ''}
                     </p>
                   </div>
                   {isPending && (
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => toggle(draft.id)}>
+                      <Button size="sm" variant="outline" onClick={() => toggle(draft.id)} aria-expanded={!!expanded[draft.id]}>
                         {expanded[draft.id] ? 'Hide' : 'Preview'}
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-red-700"
+                        className="text-red-700 dark:text-red-400"
                         onClick={() => reject(draft.id)}
                         loading={rejecting}
                       >
-                        <X size={14} /> Reject
+                        <X size={14} aria-hidden="true" /> Reject
                       </Button>
                       <Button
                         size="sm"
                         onClick={() => approve(draft.id)}
                         loading={approving}
                       >
-                        <Check size={14} /> Approve
+                        <Check size={14} aria-hidden="true" /> Approve
                       </Button>
                     </div>
                   )}
                 </div>
 
                 {expanded[draft.id] && isPending && (
-                  <div className="border-t border-[#E7E1D7] pt-3 space-y-2">
+                  <div className="border-t border-[#E7E1D7] dark:border-[#2c2f2a] pt-3 space-y-2 animate-fade-in">
                     {questions.map((q: any, idx: number) => (
-                      <div key={idx} className="bg-[#FBF9F5] rounded p-2">
-                        <p className="text-sm text-[#1F2421]">
-                          <span className="text-xs text-[#A94E22] dark:text-[#e8a06f] mr-2">Q{idx + 1} ({q.type})</span>
+                      <div key={idx} className="bg-[#FBF9F5] dark:bg-[#23261f] rounded-xl p-3 ring-1 ring-inset ring-[#E7E1D7]/60 dark:ring-[#2c2f2a]">
+                        <p className="text-sm text-[#1F2421] dark:text-[#ece9e2]">
+                          <span className="text-xs text-[#A94E22] dark:text-[#e8a06f] mr-2 font-semibold">Q{idx + 1} ({q.type})</span>
                           {q.prompt}
                         </p>
                         {q.options && (
                           <ul className="ml-4 mt-1 space-y-0.5">
                             {q.options.map((o: any, oi: number) => (
-                              <li key={oi} className={`text-xs ${o.isCorrect ? 'text-green-700 font-medium' : 'text-[#5C635D]'}`}>
+                              <li key={oi} className={`text-xs ${o.isCorrect ? 'text-green-700 dark:text-green-400 font-medium' : 'text-[#5C635D] dark:text-[#b9beb4]'}`}>
                                 {o.isCorrect ? '✓' : '○'} {o.text}
                               </li>
                             ))}

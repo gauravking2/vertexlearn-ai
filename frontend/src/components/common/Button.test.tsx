@@ -20,11 +20,10 @@ describe('Button', () => {
 
   it('applies variant styles', () => {
     const { rerender } = render(<Button variant="primary">Primary</Button>);
-    // Primary bg is the AA-passing shade (white on #A94E22 = 5.53:1).
-    expect(screen.getByRole('button')).toHaveClass('bg-[#A94E22]');
+    expect(screen.getByRole('button')).toHaveClass('bg-[var(--vl-accent-strong)]');
 
     rerender(<Button variant="secondary">Secondary</Button>);
-    expect(screen.getByRole('button')).toHaveClass('bg-[#1F2421]');
+    expect(screen.getByRole('button')).toHaveClass('bg-[var(--vl-text)]');
   });
 
   it('disables button when disabled prop is true', () => {

@@ -5,6 +5,12 @@ const LECTURE_ID = '00000000-0000-4000-8000-000000000002';
 const QUIZ_ID = '00000000-0000-4000-8000-000000000003';
 
 async function mockStudentApi(page: Page) {
+  // Catch-all first; Playwright gives later specific routes precedence. This
+  // keeps ancillary dashboard requests hermetic so a live 401 cannot log out
+  // the fake session between the flow's explicit page checks.
+  await page.route('**/api/v1/**', async (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) })
+  );
   await page.route('**/api/v1/auth/register', async (route) =>
     route.fulfill({
       status: 201,

@@ -13,9 +13,11 @@ export const LoadingSpinner = ({ size = 'md', text }: LoadingSpinnerProps) => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-12">
-      <Loader2 className="animate-spin text-[#C4612F]" size={sizeMap[size]} />
-      {text && <p className="text-sm text-[#5C635D]">{text}</p>}
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 py-12" role="status" aria-live="polite">
+      <span className="relative inline-grid place-items-center rounded-2xl bg-[var(--vl-accent-soft)] p-3 ring-1 ring-[var(--vl-accent-border)]">
+        <Loader2 className="animate-spin text-[var(--vl-accent)]" size={sizeMap[size]} />
+      </span>
+      {text && <p className="text-sm font-medium text-[var(--vl-text-secondary)]">{text}</p>}
     </div>
   );
 };

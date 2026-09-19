@@ -14,7 +14,7 @@ export const ThemeToggle = () => {
         aria-label={t('action.toggleTheme', locale)}
         aria-pressed={resolved === 'dark'}
         title={`${t('theme.light', locale)} / ${t('theme.dark', locale)} (${mode})`}
-        className="p-2 rounded-lg transition-colors text-[#5C635D] hover:bg-[#F2E3D6] hover:text-[#C4612F] dark:text-[#b9beb4] dark:hover:bg-[#23261f] dark:hover:text-[#e8a06f] focus-visible:outline-2"
+        className="inline-grid min-h-10 min-w-10 place-items-center rounded-[var(--vl-radius-sm)] text-[var(--vl-text-secondary)] transition-colors hover:bg-[var(--vl-surface-hover)] hover:text-[var(--vl-accent)]"
       >
         {resolved === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
       </button>
@@ -25,7 +25,7 @@ export const ThemeToggle = () => {
         id="theme-mode-select"
         value={mode}
         onChange={(e) => setMode(e.target.value as typeof mode)}
-        className="hidden sm:block bg-transparent text-xs border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-lg px-1 py-1 text-[#5C635D] dark:text-[#b9beb4]"
+        className="hidden min-h-10 rounded-[var(--vl-radius-sm)] border border-[var(--vl-border)] bg-[var(--vl-surface-inset)] px-2 py-1 text-xs text-[var(--vl-text-secondary)] sm:block"
       >
         <option value="light">{t('theme.light', locale)}</option>
         <option value="dark">{t('theme.dark', locale)}</option>

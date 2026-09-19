@@ -38,7 +38,7 @@ export const MyAssignmentsPage = () => {
   if (isError) {
     return (
       <Card>
-        <p className="text-sm text-red-700 mb-2" role="alert">{getApiErrorMessage(error)}</p>
+        <p className="text-sm text-red-700 dark:text-red-400 mb-2" role="alert">{getApiErrorMessage(error)}</p>
         <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
       </Card>
     );
@@ -52,15 +52,15 @@ export const MyAssignmentsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
-          My <span className="italic text-[#C4612F]">Assignments</span>
+        <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] dark:text-[#ece9e2] mb-2">
+          My <span className="italic text-[#C4612F] dark:text-[#e8a06f]">Assignments</span>
         </h1>
-        <p className="text-[#5C635D]">Everything due across your enrolled courses</p>
+        <p className="text-[#5C635D] dark:text-[#b9beb4]">Everything due across your enrolled courses</p>
       </div>
 
       {listError && (
         <Card>
-          <p className="text-sm text-red-700" role="alert">{getApiErrorMessage(listError)}</p>
+          <p className="text-sm text-red-700 dark:text-red-400" role="alert">{getApiErrorMessage(listError)}</p>
         </Card>
       )}
 
@@ -75,17 +75,21 @@ export const MyAssignmentsPage = () => {
           />
         </Card>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 vl-stagger">
           {rows.map((a: any) => {
             const overdue = a.dueAt && new Date(a.dueAt) < new Date();
             return (
-              <Card key={a.id}>
-                <div className="flex items-start justify-between gap-3 mb-2">
+              <Card key={a.id} className="relative overflow-hidden">
+                <span
+                  aria-hidden="true"
+                  className={`absolute left-0 top-0 bottom-0 w-1 ${overdue ? 'bg-gradient-to-b from-red-500 to-red-700' : 'bg-gradient-to-b from-[#C4612F] to-[#A94E22]'}`}
+                />
+                <div className="flex items-start justify-between gap-3 mb-2 pl-2">
                   <div className="min-w-0">
-                    <p className="text-xs text-[#5C635D] mb-0.5">{a.courseTitle}</p>
-                    <h3 className="font-medium text-[#1F2421]">{a.title}</h3>
+                    <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mb-0.5">{a.courseTitle}</p>
+                    <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2]">{a.title}</h3>
                     {a.dueAt && (
-                      <p className="text-sm text-[#5C635D] flex items-center gap-1 mt-1">
+                      <p className={`text-sm flex items-center gap-1 mt-1 ${overdue ? 'text-red-700 dark:text-red-400 font-medium' : 'text-[#5C635D] dark:text-[#b9beb4]'}`}>
                         <Clock size={14} aria-hidden="true" /> Due {new Date(a.dueAt).toLocaleDateString()}
                       </p>
                     )}
@@ -95,8 +99,10 @@ export const MyAssignmentsPage = () => {
                     {overdue && <Badge variant="error">Overdue</Badge>}
                   </div>
                 </div>
-                {a.description && <p className="text-sm text-[#5C635D] mb-3 line-clamp-2">{a.description}</p>}
-                <AssignmentRowStatus assignmentId={a.id} />
+                {a.description && <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-3 line-clamp-2 pl-2">{a.description}</p>}
+                <div className="pl-2">
+                  <AssignmentRowStatus assignmentId={a.id} />
+                </div>
               </Card>
             );
           })}
@@ -108,7 +114,7 @@ export const MyAssignmentsPage = () => {
 
 const AssignmentRowStatus = ({ assignmentId }: { assignmentId: string }) => {
   const { data: mine, isLoading } = useMySubmissionSafe(assignmentId);
-  if (isLoading) return <p className="text-xs text-[#5C635D]">Checking submission…</p>;
+  if (isLoading) return <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">Checking submission…</p>;
   if (mine) {
     return (
       <div className="flex items-center justify-between gap-2">

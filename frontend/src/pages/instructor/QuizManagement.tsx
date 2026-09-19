@@ -86,17 +86,17 @@ export const QuizManagement = () => {
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" as={Link} to={`/courses/${courseId}`}>
-        <ArrowLeft size={16} /> Back to course
+        <ArrowLeft size={16} aria-hidden="true" /> Back to course
       </Button>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
-            Quiz <span className="italic text-[#C4612F]">Management</span>
+          <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] dark:text-[#ece9e2] mb-2">
+            Quiz <span className="italic text-[#C4612F] dark:text-[#e8a06f]">Management</span>
           </h1>
-          <p className="text-[#5C635D]">Create quizzes for {course?.title ?? 'this course'}</p>
+          <p className="text-[#5C635D] dark:text-[#b9beb4]">Create quizzes for {course?.title ?? 'this course'}</p>
         </div>
         <Button onClick={() => setShowForm((v) => !v)}>
-          <Plus size={16} /> New quiz
+          <Plus size={16} aria-hidden="true" /> New quiz
         </Button>
       </div>
 
@@ -104,14 +104,14 @@ export const QuizManagement = () => {
       <AiQuizGenerator lectures={lectures} />
 
       {showForm && (
-        <Card>
+        <Card className="animate-fade-in">
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
             <Input label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
 
             <div className="space-y-3">
               {questions.map((q, idx) => (
-                <div key={idx} className="border border-[#E7E1D7] rounded-lg p-3 space-y-2">
+                <div key={idx} className="border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-xl p-3.5 space-y-2 bg-[#FBF9F5]/40 dark:bg-[#23261f]/40">
                   <div className="flex items-center justify-between">
                     <Badge variant="neutral">Q{idx + 1} — {q.type}</Badge>
                   </div>
@@ -122,20 +122,23 @@ export const QuizManagement = () => {
                     required
                   />
                   {q.type !== 'short_answer' && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-[#5C635D]">Options (mark correct):</p>
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">Options (mark correct):</p>
                       {q.options.map((opt, oIdx) => (
                         <div key={oIdx} className="flex items-center gap-2">
                           <input
                             type="checkbox"
                             checked={opt.isCorrect}
                             onChange={(e) => updateOption(idx, oIdx, 'isCorrect', e.target.checked)}
+                            aria-label={`Option ${oIdx + 1} correct`}
+                            className="accent-[#C4612F] w-4 h-4"
                           />
                           <input
                             value={opt.text}
                             onChange={(e) => updateOption(idx, oIdx, 'text', e.target.value)}
                             placeholder={`Option ${oIdx + 1}`}
-                            className="flex-1 px-3 py-1.5 border border-[#E7E1D7] rounded text-sm"
+                            aria-label={`Option ${oIdx + 1} text`}
+                            className="flex-1 px-3 py-1.5 bg-[#FFFFFF] dark:bg-[#1a1d17] border border-[#E7E1D7] dark:border-[#2c2f2a] rounded-lg text-sm text-[#1F2421] dark:text-[#ece9e2] focus:outline-none focus:ring-2 focus:ring-[#C4612F] focus:border-transparent transition-all"
                           />
                         </div>
                       ))}
@@ -145,7 +148,7 @@ export const QuizManagement = () => {
               ))}
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => addQuestion('mcq')}>+ MCQ</Button>
               <Button type="button" variant="outline" size="sm" onClick={() => addQuestion('multi_select')}>+ Multi-select</Button>
               <Button type="button" variant="outline" size="sm" onClick={() => addQuestion('short_answer')}>+ Short answer</Button>
@@ -160,9 +163,9 @@ export const QuizManagement = () => {
       )}
 
       {/* Existing quizzes (real list, no correct answers exposed) */}
-      <Card>
+      <Card variant="elevated">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-medium text-[#1F2421]">Existing quizzes</h3>
+          <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2]">Existing quizzes</h3>
           <Button as={Link} to="/instructor/quiz-drafts" variant="outline" size="sm">Review AI drafts</Button>
         </div>
         {loadingQuizzes ? (
@@ -176,10 +179,10 @@ export const QuizManagement = () => {
         ) : (
           <ul className="space-y-2">
             {existing.map((q: any) => (
-              <li key={q.id} className="flex items-center justify-between gap-3 bg-[#FBF9F5] rounded p-2.5">
-                <div>
-                  <p className="text-sm font-medium text-[#1F2421]">{q.title}</p>
-                  <p className="text-xs text-[#5C635D]">
+              <li key={q.id} className="flex items-center justify-between gap-3 bg-[#FBF9F5] dark:bg-[#23261f] rounded-xl p-3 ring-1 ring-inset ring-[#E7E1D7]/60 dark:ring-[#2c2f2a]">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#1F2421] dark:text-[#ece9e2]">{q.title}</p>
+                  <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">
                     {q.questionCount ?? 0} questions{q.isAiGenerated ? ' · AI-generated' : ''}
                   </p>
                 </div>

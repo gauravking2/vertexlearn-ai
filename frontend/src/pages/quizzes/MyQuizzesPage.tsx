@@ -8,7 +8,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Badge } from '@/components/common/Badge';
 import { getApiErrorMessage } from '@/components/common/apiError';
-import { FileQuestion } from 'lucide-react';
+import { FileQuestion, History } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { validId, getAttemptLedger } from '@/utils/model';
 
@@ -39,7 +39,7 @@ export const MyQuizzesPage = () => {
   if (isError) {
     return (
       <Card>
-        <p className="text-sm text-red-700 mb-2" role="alert">{getApiErrorMessage(error)}</p>
+        <p className="text-sm text-red-700 dark:text-red-400 mb-2" role="alert">{getApiErrorMessage(error)}</p>
         <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
       </Card>
     );
@@ -54,15 +54,15 @@ export const MyQuizzesPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] mb-2">
-          My <span className="italic text-[#C4612F]">Quizzes</span>
+        <h1 className="text-3xl font-serif font-normal tracking-tight text-[#1F2421] dark:text-[#ece9e2] mb-2">
+          My <span className="italic text-[#C4612F] dark:text-[#e8a06f]">Quizzes</span>
         </h1>
-        <p className="text-[#5C635D]">Test your knowledge across your courses</p>
+        <p className="text-[#5C635D] dark:text-[#b9beb4]">Test your knowledge across your courses</p>
       </div>
 
       {listError && (
         <Card>
-          <p className="text-sm text-red-700" role="alert">{getApiErrorMessage(listError)}</p>
+          <p className="text-sm text-red-700 dark:text-red-400" role="alert">{getApiErrorMessage(listError)}</p>
         </Card>
       )}
 
@@ -77,16 +77,21 @@ export const MyQuizzesPage = () => {
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 vl-stagger">
           {rows.map((quiz: any) => (
             <Card key={quiz.id}>
-              <p className="text-xs text-[#5C635D] mb-1">{quiz.courseTitle}</p>
+              <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mb-1">{quiz.courseTitle}</p>
               <div className="flex items-start justify-between mb-2 gap-2">
-                <h3 className="font-medium text-[#1F2421]">{quiz.title}</h3>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-9 h-9 rounded-lg bg-[#F2E3D6] dark:bg-[#2c241c] flex items-center justify-center shrink-0" aria-hidden="true">
+                    <FileQuestion className="text-[#C4612F] dark:text-[#e8a06f]" size={18} />
+                  </span>
+                  <h3 className="font-medium text-[#1F2421] dark:text-[#ece9e2] truncate">{quiz.title}</h3>
+                </div>
                 {quiz.isAiGenerated && <Badge variant="primary">AI</Badge>}
               </div>
-              {quiz.description && <p className="text-sm text-[#5C635D] mb-2 line-clamp-2">{quiz.description}</p>}
-              <p className="text-xs text-[#5C635D] mb-3">{quiz.questionCount ?? 0} questions</p>
+              {quiz.description && <p className="text-sm text-[#5C635D] dark:text-[#b9beb4] mb-2 line-clamp-2">{quiz.description}</p>}
+              <p className="text-xs text-[#5C635D] dark:text-[#b9beb4] mb-3">{quiz.questionCount ?? 0} questions</p>
               <Button as={Link} to={`/quizzes/${quiz.id}/attempt`} fullWidth>
                 Start quiz
               </Button>
@@ -97,14 +102,17 @@ export const MyQuizzesPage = () => {
 
       {history.length > 0 && (
         <Card>
-          <h2 className="text-lg font-serif text-[#1F2421] mb-3">Recent attempts</h2>
-          <ul className="space-y-2">
+          <h2 className="text-lg font-serif text-[#1F2421] dark:text-[#ece9e2] mb-3 flex items-center gap-2">
+            <History size={18} className="text-[#C4612F] dark:text-[#e8a06f]" aria-hidden="true" />
+            Recent attempts
+          </h2>
+          <ul className="space-y-1">
             {history.slice(0, 10).map((h) => (
-              <li key={h.attemptId} className="flex items-center justify-between gap-2 text-sm">
-                <span className="text-[#1F2421] truncate">{h.quizTitle}</span>
-                <span className="text-[#5C635D] shrink-0">
+              <li key={h.attemptId} className="flex items-center justify-between gap-2 text-sm rounded-lg px-2 py-1.5 -mx-2 hover:bg-[#FBF9F5] dark:hover:bg-[#23261f] transition-colors">
+                <span className="text-[#1F2421] dark:text-[#ece9e2] truncate">{h.quizTitle}</span>
+                <span className="text-[#5C635D] dark:text-[#b9beb4] shrink-0 tabular-nums">
                   {h.score} / {h.maxScore} •{' '}
-                  <Link to={`/quiz-attempts/${h.attemptId}/result`} className="text-[#C4612F] hover:underline">
+                  <Link to={`/quiz-attempts/${h.attemptId}/result`} className="text-[#C4612F] dark:text-[#e8a06f] hover:underline">
                     View result
                   </Link>
                 </span>
