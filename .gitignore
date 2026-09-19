@@ -2,9 +2,13 @@ node_modules/
 dist/
 build/
 coverage/
+# Local secrets — never commit. Examples (*.example) stay tracked via negations below.
 .env
-.env.local
-.env.ci
+.env.*
+!.env.example
+!frontend/.env.example
+!backend/.env.example
+!ai-service/.env.example
 *.log
 .DS_Store
 pgdata/

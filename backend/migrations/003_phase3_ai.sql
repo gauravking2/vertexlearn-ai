@@ -1,3 +1,9 @@
+-- pgvector must exist before the VECTOR column below. Local Compose also
+-- creates it via infra/postgres/init/01-extensions.sql; this line makes the
+-- migration self-sufficient on managed Postgres (e.g. Render), where the
+-- init container never runs. Idempotent and safe to re-run.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS lecture_transcripts (
   lecture_id UUID PRIMARY KEY REFERENCES lectures (id) ON DELETE CASCADE,
   transcript TEXT NOT NULL CHECK (char_length(transcript) >= 1),

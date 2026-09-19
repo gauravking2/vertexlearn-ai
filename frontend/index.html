@@ -15,6 +15,24 @@
         }
       } catch (e) {}
     </script>
+    <script>
+      // GitHub Pages SPA restore: 404.html stores the deep link in
+      // sessionStorage then bounces to the base path; replay it here before
+      // React Router boots so refresh / direct navigation works on static
+      // hosting. No-op locally (key absent) and preserves all routes.
+      try {
+        var redirect = sessionStorage.getItem('vl-spa-redirect');
+        if (redirect) {
+          sessionStorage.removeItem('vl-spa-redirect');
+          var base = '/vertexlearn-ai';
+          var here = window.location.pathname;
+          var atBase = here === base || here === base + '/';
+          if (atBase && redirect.charAt(0) === '/') {
+            window.history.replaceState(null, '', base + redirect);
+          }
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

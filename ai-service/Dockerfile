@@ -6,4 +6,6 @@ COPY app ./app
 COPY main.py ./
 ENV AI_SERVICE_PORT=8000
 EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Render injects PORT; default 8000 keeps local/Compose behavior unchanged.
+# Binds 0.0.0.0 (loopback-only is unreachable on Render).
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

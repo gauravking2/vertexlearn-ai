@@ -4,6 +4,9 @@ const envSchema = z.object({
   NODE_ENV: z.string().default('development'),
   LOG_LEVEL: z.string().default('info'),
   API_PORT: z.coerce.number().int().positive().default(4000),
+  // Render (and most PaaS hosts) inject the listen port as PORT, not API_PORT.
+  // Accepted as an optional override; API_PORT remains the canonical setting.
+  PORT: z.coerce.number().int().positive().optional(),
   FRONTEND_URL: z.string().default('http://localhost:5173'),
   JWT_ACCESS_SECRET: z.string().min(16, 'JWT_ACCESS_SECRET must be at least 16 chars'),
   JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 chars'),

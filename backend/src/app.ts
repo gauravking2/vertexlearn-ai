@@ -22,7 +22,13 @@ export function createApp(): express.Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
-  app.use(cors({ origin: config.FRONTEND_URL, credentials: true }));
+  // FRONTEND_URL is a single production origin (e.g. the GitHub Pages URL).
+  // A comma-separated list is also accepted for transition windows
+  // (e.g. Pages URL + local dev) without changing single-origin behavior.
+  const allowedOrigins = config.FRONTEND_URL.includes(',')
+    ? config.FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean)
+    : config.FRONTEND_URL;
+  app.use(cors({ origin: allowedOrigins, credentials: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger);
   app.use(

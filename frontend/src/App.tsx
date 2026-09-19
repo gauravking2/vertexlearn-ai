@@ -22,11 +22,15 @@ export default function App() {
     initTheme();
     initLocale();
   }, []);
+  // GitHub Pages serves the bundle from /vertexlearn-ai/ (Vite `base`).
+  // import.meta.env.BASE_URL is '/' locally and '/vertexlearn-ai/' on Pages,
+  // so basename keeps every existing route working in both environments.
+  const basename = import.meta.env.BASE_URL?.replace(/\/$/, '') || undefined;
   return (
     <StrictMode>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <BrowserRouter basename={basename}>
             <AppRoutes />
           </BrowserRouter>
         </QueryClientProvider>

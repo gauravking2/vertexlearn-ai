@@ -15,4 +15,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY migrations ./migrations
 EXPOSE 4000
-CMD ["node", "dist/index.js"]
+# Production-safe default: run idempotent migrations (IF NOT EXISTS, safe to
+# re-run; skips gracefully when the DB is unreachable) then start the API.
+# The server binds 0.0.0.0 and honors Render's PORT (see src/index.ts).
+# Docker Compose overrides this command explicitly, so local behavior is unchanged.
+CMD ["sh", "-c", "npm run migrate:prod && node dist/index.js"]

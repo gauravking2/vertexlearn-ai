@@ -1,0 +1,73 @@
+name: deploy-pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages deploy needs these permissions (least privilege for the job).
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Avoid concurrent Pages deployments stomping each other; latest wins via cancel.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Typecheck frontend
+        run: npm run typecheck
+        working-directory: frontend
+
+      # Production API URL is baked by NAME only (VITE_API_URL). Repository
+      # variable PAGES_API_URL (or secret) should hold the Render backend URL,
+      # e.g. https://vertexlearn-backend.onrender.com. Falls back to the
+      # local default when unset so the workflow never fails on a missing var.
+      # No secrets are ever baked: only the public backend base URL.
+      - name: Build production frontend (GitHub Pages base /vertexlearn-ai/)
+        run: npm run build
+        working-directory: frontend
+        env:
+          GITHUB_PAGES: 'true'
+          VITE_API_URL: ${{ vars.PAGES_API_URL }}
+
+      - name: Verify Pages artifact (base path + SPA fallback)
+        run: |
+          test -f dist/index.html || (echo "dist/index.html missing" && exit 1)
+          test -f dist/404.html || (echo "dist/404.html missing (SPA fallback)" && exit 1)
+          test -f dist/.nojekyll || (echo "dist/.nojekyll missing" && exit 1)
+          grep -q "/vertexlearn-ai/" dist/index.html || (echo "Pages base path /vertexlearn-ai/ not found in dist/index.html" && exit 1)
+          echo "Pages artifact OK"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

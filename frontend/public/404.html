@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VertexLearn AI</title>
+    <script>
+      // GitHub Pages SPA fallback (project site /vertexlearn-ai/).
+      // Static hosting serves this 404.html for deep links / refreshes.
+      // Preserve the requested path and hand it to index.html, which restores
+      // it into history so BrowserRouter (basename /vertexlearn-ai) can route.
+      // Local dev and existing BrowserRouter routes are unchanged.
+      (function () {
+        var base = '/vertexlearn-ai';
+        var path = window.location.pathname;
+        var search = window.location.search || '';
+        var hash = window.location.hash || '';
+        var relative = path.indexOf(base) === 0 ? path.slice(base.length) : path;
+        if (!relative) relative = '/';
+        try {
+          sessionStorage.setItem('vl-spa-redirect', relative + search + hash);
+        } catch (e) {}
+        window.location.replace(base + '/' + search + hash);
+      })();
+    </script>
+  </head>
+  <body>
+    <noscript>VertexLearn AI requires JavaScript. Please return to <a href="/vertexlearn-ai/">/vertexlearn-ai/</a>.</noscript>
+  </body>
+</html>

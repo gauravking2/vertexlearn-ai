@@ -24,6 +24,13 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Login path that respects the Vite base (GitHub Pages serves from
+// /vertexlearn-ai/, local dev from /). Keeps auth redirects working in both.
+function loginPath(): string {
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+  return `${base}/login`;
+}
+
 // Response interceptor: on 401, rotate the refresh token once and retry.
 api.interceptors.response.use(
   (response) => response,
@@ -49,12 +56,12 @@ api.interceptors.response.use(
           return api(originalRequest);
         } catch (refreshError) {
           authStore.getState().logout();
-          window.location.href = '/login';
+          window.location.href = loginPath();
           return Promise.reject(refreshError);
         }
       } else {
         authStore.getState().logout();
-        window.location.href = '/login';
+        window.location.href = loginPath();
       }
     }
 
