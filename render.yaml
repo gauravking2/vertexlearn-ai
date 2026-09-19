@@ -176,6 +176,7 @@ services:
   - type: redis
     name: vertexlearn-redis
     plan: free
+    ipAllowList: []
     maxmemoryPolicy: noeviction
 
 databases:
