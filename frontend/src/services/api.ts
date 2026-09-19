@@ -3,7 +3,17 @@ import { authStore } from '@/store/authStore';
 
 // Backend REST base. The frontend talks ONLY to the core backend under /api/v1;
 // it must never call the FastAPI AI service directly.
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/v1`;
+//
+// GitHub Pages builds MUST receive VITE_API_URL (the deploy workflow injects
+// the PAGES_API_URL repo variable). A silent localhost fallback in a Pages
+// production build would point the live site at a dead host and surface only
+// as "Network Error" at login, so fail fast instead. Local dev keeps the
+// localhost fallback (GITHUB_PAGES is unset there).
+const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+if (import.meta.env.GITHUB_PAGES === 'true' && !import.meta.env.VITE_API_URL) {
+  throw new Error('VITE_API_URL is required for GitHub Pages production builds (set PAGES_API_URL).');
+}
+const API_BASE_URL = `${rawApiUrl.replace(/\/$/, '')}/api/v1`;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

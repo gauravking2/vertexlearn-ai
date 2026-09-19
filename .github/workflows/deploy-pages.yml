@@ -37,12 +37,18 @@ jobs:
         working-directory: frontend
 
       # Production API URL is baked by NAME only (VITE_API_URL). Repository
-      # variable PAGES_API_URL (or secret) should hold the Render backend URL,
-      # e.g. https://vertexlearn-backend.onrender.com. Falls back to the
-      # local default when unset so the workflow never fails on a missing var.
-      # No secrets are ever baked: only the public backend base URL.
+      # variable PAGES_API_URL must hold the Render backend URL,
+      # e.g. https://vertexlearn-backend.onrender.com. The build FAILS if it
+      # is missing (frontend fail-fast in api.ts) so the live site can never
+      # silently ship a localhost fallback. No secrets are ever baked: only
+      # the public backend base URL.
       - name: Build production frontend (GitHub Pages base /vertexlearn-ai/)
-        run: npm run build
+        run: |
+          if [ -z "${{ vars.PAGES_API_URL }}" ]; then
+            echo "PAGES_API_URL repository variable is not set (must be the Render backend URL)" >&2
+            exit 1
+          fi
+          npm run build
         working-directory: frontend
         env:
           GITHUB_PAGES: 'true'

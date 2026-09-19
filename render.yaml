@@ -21,8 +21,11 @@
 #   2. AI_SERVICE_TOKEN is generated ONCE on the backend
 #      (generateValue: true) and injected into the ai-service via
 #      fromService envVarKey — never pasted manually, never in git.
-#   3. FRONTEND_URL must be exactly https://gauravking2.github.io/vertexlearn-ai/
-#      (no trailing slash) so backend CORS allows the Pages origin.
+#   3. FRONTEND_URL must be the BARE origin https://gauravking2.github.io
+#      (no path, no trailing slash). Browsers send Origin as scheme+host
+#      only, so a path suffix (/vertexlearn-ai) can never match and the
+#      browser blocks login as Network Error. The /vertexlearn-ai subpath
+#      is handled by the frontend Router basename, not by CORS.
 #   4. AI_SERVICE_URL on the backend must be the ai-service public URL
 #      (default below assumes the ai-service name; update if renamed).
 #   5. AI providers are unchanged: LLM_PROVIDER=gemini (GEMINI_API_KEY),
@@ -51,9 +54,11 @@ services:
         value: production
       - key: LOG_LEVEL
         value: info
-      # Public Pages origin (exact, no wildcard).
+      # Bare browser origin (CORS compares the Origin header exactly:
+      # scheme + host, never a subpath). The Pages subpath is a frontend
+      # Router concern, not a CORS origin.
       - key: FRONTEND_URL
-        value: https://gauravking2.github.io/vertexlearn-ai
+        value: https://gauravking2.github.io
       - key: DATABASE_URL
         fromDatabase:
           name: vertexlearn-db
