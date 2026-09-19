@@ -22,12 +22,24 @@ export function createApp(): express.Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
-  // FRONTEND_URL is a single production origin (e.g. the GitHub Pages URL).
-  // A comma-separated list is also accepted for transition windows
-  // (e.g. Pages URL + local dev) without changing single-origin behavior.
-  const allowedOrigins = config.FRONTEND_URL.includes(',')
-    ? config.FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean)
-    : config.FRONTEND_URL;
+  // FRONTEND_URL is the browser origin allow-list (exact Origin match:
+  // scheme + host, never a subpath — the Pages /vertexlearn-ai subpath is a
+  // Router basename, not part of the Origin header). A single origin is the
+  // norm; a comma-separated list is accepted for transition windows.
+  // Any entry carrying a path (e.g. .../vertexlearn-ai) is normalized to its
+  // bare origin so a path-suffixed value can never silently break CORS and
+  // surface in the browser only as "Network Error".
+  const allowedOrigins = config.FRONTEND_URL.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      try {
+        const u = new URL(s);
+        return `${u.protocol}//${u.host}`;
+      } catch {
+        return s.replace(/\/$/, '');
+      }
+    });
   app.use(cors({ origin: allowedOrigins, credentials: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger);
