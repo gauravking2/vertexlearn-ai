@@ -55,6 +55,7 @@ jobs:
           test -f dist/.nojekyll || (echo "dist/.nojekyll missing" && exit 1)
           grep -q "/vertexlearn-ai/" dist/index.html || (echo "Pages base path /vertexlearn-ai/ not found in dist/index.html" && exit 1)
           echo "Pages artifact OK"
+        working-directory: frontend
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
