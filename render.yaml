@@ -69,9 +69,9 @@ services:
           name: vertexlearn-redis
           property: connectionString
       # Backend -> AI service (server-to-service; token below authenticates).
-      # Update the hostname if the AI service is renamed.
+      # Actual deployed Render hostname (see dashboard); update if the AI service is renamed.
       - key: AI_SERVICE_URL
-        value: https://vertexlearn-ai-service.onrender.com
+        value: https://vertexlearn-ai-service-0pts.onrender.com
       # Internal secret: Render generates ONCE here; the ai-service reads the
       # same value via fromService envVarKey (server-side only).
       - key: AI_SERVICE_TOKEN
