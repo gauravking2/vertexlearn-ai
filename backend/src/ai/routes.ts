@@ -7,7 +7,7 @@ import { validateBody } from '../middleware/validate';
 import { requireCourseOwner } from '../courses/ownership';
 import { getLectureCourse, isEnrolled } from '../learning/guards';
 import { touchStreak } from '../learning/progress';
-import { callAiServiceChat, callAiServiceGenerate, isAiServiceConfigured } from './client';
+import { callAiServiceChat, callAiServiceGenerate, isAiServiceConfigured, pingAiService } from './client';
 import { getEmbeddingProvider, parseEmbedding, serializeEmbedding } from './embeddings';
 import {
   buildGroundedSystemPrompt,
@@ -101,6 +101,19 @@ function aiProviderError(err: unknown): ApiError {
   }
   return new ApiError(503, 'PROVIDER_UNAVAILABLE', 'AI Tutor is temporarily unavailable. Please try again.');
 }
+
+aiRouter.get('/ai/warmup', authenticate, async (_req, res) => {
+  // Lightweight pre-warm: opening the AI Tutor page fires this in the
+  // background so a sleeping free-tier AI service boots BEFORE the user
+  // sends a message. Bounded 20s, never blocks page render, never exposes
+  // the AI service or its token (server-to-server only).
+  if (!isAiServiceConfigured()) {
+    res.json({ warm: false, reason: 'AI service is not configured' });
+    return;
+  }
+  const warm = await pingAiService(20000);
+  res.json({ warm });
+});
 
 aiRouter.post('/ai/chat/sessions', authenticate, authorize('student', 'instructor', 'admin'), validateBody(sessionSchema), async (req, res, next) => {
   try {

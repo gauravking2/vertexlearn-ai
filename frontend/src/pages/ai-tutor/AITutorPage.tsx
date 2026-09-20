@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useCourse } from '@/hooks/useCourses';
 import { useCreateChatSession, useSendMessage, useSessionMessages, useUpdateSessionMode } from '@/hooks/useAI';
+import { aiService } from '@/services/aiService';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -39,13 +40,28 @@ export const AITutorPage = () => {
   const [message, setMessage] = useState('');
   const [selectedMode, setSelectedMode] = useState<AIMode>('intermediate');
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
-  // Safety net: the send mutation resolves on success/error, but if the
-  // transport ever hangs without settling, force-clear the sending state so
-  // the typing indicator can never spin forever. Cleared on next send.
+  // Guards exactly-once send: Enter key + button click can otherwise double
+  // fire while the mutation is pending (duplicate user bubbles observed).
+  const sendGuard = useRef(false);
+  // Staged loading UX: "Thinking" 0–8s, then "Waking AI Tutor" until the
+  // bounded client timeout settles. A stuck-transport safety net swaps the
+  // dots for a retry warning if the mutation ever hangs without settling.
+  const phaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [wakingPhase, setWakingPhase] = useState(false);
   const [sendStuck, setSendStuck] = useState(false);
   useEffect(() => () => {
+    if (phaseTimer.current) clearTimeout(phaseTimer.current);
     if (stuckTimer.current) clearTimeout(stuckTimer.current);
+  }, []);
+
+  // Pre-warm: opening the Tutor page pings the AI service in the background
+  // (server-to-server only, bounded 25s) so a cold instance boots before the
+  // first message. Fire-and-forget: never blocks render, never retries.
+  useEffect(() => {
+    let cancelled = false;
+    aiService.warmup().catch(() => undefined).finally(() => undefined);
+    void cancelled;
   }, []);
 
   const messages: UIMessage[] = (messagesData?.data ?? []).map((m: any) => ({
@@ -69,28 +85,45 @@ export const AITutorPage = () => {
     }
   };
 
+  const clearSendTimers = () => {
+    if (phaseTimer.current) clearTimeout(phaseTimer.current);
+    if (stuckTimer.current) clearTimeout(stuckTimer.current);
+    phaseTimer.current = null;
+    stuckTimer.current = null;
+  };
+
   const sendText = (text: string) => {
-    if (!activeSessionId || !text.trim()) return;
+    // Exactly-once: ignore re-entrant sends (Enter + click, double-tap)
+    // while a request is in flight or the guard is held.
+    if (!activeSessionId || !text.trim() || sendGuard.current || sendingMessage) return;
+    sendGuard.current = true;
     resetSend();
     setSendStuck(false);
-    if (stuckTimer.current) clearTimeout(stuckTimer.current);
-    // If the request has not settled after the client timeout + margin, show
-    // the stuck warning with retry instead of an endless typing indicator.
-    stuckTimer.current = setTimeout(() => setSendStuck(true), 110000);
+    setWakingPhase(false);
+    clearSendTimers();
+    // 0–8s "Thinking", then "Waking AI Tutor…" until settle.
+    phaseTimer.current = setTimeout(() => setWakingPhase(true), 8000);
+    // Stuck-transport net (client timeout 140s + margin): swap dots for a
+    // retry warning instead of an endless typing indicator.
+    stuckTimer.current = setTimeout(() => setSendStuck(true), 150000);
     setPendingUserMessage(text);
     setMessage('');
     sendMessage(
       { sessionId: activeSessionId, message: text },
       {
         onSuccess: () => {
-          if (stuckTimer.current) clearTimeout(stuckTimer.current);
+          clearSendTimers();
+          sendGuard.current = false;
           setSendStuck(false);
+          setWakingPhase(false);
           setPendingUserMessage(null);
         },
         // Clear the stuck pending bubble, restore the text for one-click retry.
         onError: () => {
-          if (stuckTimer.current) clearTimeout(stuckTimer.current);
+          clearSendTimers();
+          sendGuard.current = false;
           setSendStuck(false);
+          setWakingPhase(false);
           setPendingUserMessage(null);
           setMessage(text);
         },
@@ -103,7 +136,9 @@ export const AITutorPage = () => {
   const handleDismissSendError = () => {
     resetSend();
     setSendStuck(false);
-    if (stuckTimer.current) clearTimeout(stuckTimer.current);
+    setWakingPhase(false);
+    sendGuard.current = false;
+    clearSendTimers();
     setPendingUserMessage(null);
   };
 
@@ -290,19 +325,22 @@ export const AITutorPage = () => {
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center shrink-0" aria-hidden="true">
                     <Bot className="text-white" size={16} />
                   </div>
-                  <div className="bg-[#FBF9F5] dark:bg-[#23261f] px-4 py-3.5 rounded-2xl rounded-bl-md border border-[#E7E1D7] dark:border-[#2c2f2a] flex items-center">
-                    <div className="flex gap-1.5" aria-label="Tutor is thinking" role="status">
+                  <div className="bg-[#FBF9F5] dark:bg-[#23261f] px-4 py-3.5 rounded-2xl rounded-bl-md border border-[#E7E1D7] dark:border-[#2c2f2a] flex flex-col gap-1.5">
+                    <div className="flex gap-1.5" aria-label={wakingPhase ? 'Waking AI Tutor' : 'Tutor is thinking'} role="status">
                       <span className="w-2 h-2 bg-[#7C3AED] rounded-full vl-dot" />
                       <span className="w-2 h-2 bg-[#7C3AED] rounded-full vl-dot" />
                       <span className="w-2 h-2 bg-[#7C3AED] rounded-full vl-dot" />
                     </div>
+                    <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">
+                      {wakingPhase ? 'Waking AI Tutor… this can take up to a minute on first use.' : 'Thinking…'}
+                    </p>
                   </div>
                 </div>
               )}
               {sendStuck && sendingMessage && (
                 <div className="p-3 bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-200 dark:border-yellow-900 rounded-xl vl-msg-in" role="alert">
                   <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-2">
-                    Still waiting for the tutor (over 110s) — the AI service may be waking from sleep. Your question is kept below; wait a little longer or retry.
+                    AI Tutor is taking too long to respond. Your question is kept below — retry once or dismiss.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => pendingUserMessage && sendText(pendingUserMessage)}>

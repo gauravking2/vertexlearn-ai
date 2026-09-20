@@ -25,9 +25,12 @@ export function isAiServiceConfigured(): boolean {
 }
 
 export function aiServiceTimeoutMs(): number {
-  const raw = Number(process.env.AI_SERVICE_TIMEOUT_MS ?? 90000);
-  if (!Number.isFinite(raw) || raw <= 0) return 90000;
-  return Math.min(Math.max(Math.floor(raw), 5000), 180000);
+  // Total budget for ONE backend→AI-service call. Cold starts on Render Free
+  // can take 30-60s; 55s stays under typical gateway limits while allowing
+  // one legitimate wake. Never unbounded; retries are handled by the caller.
+  const raw = Number(process.env.AI_SERVICE_TIMEOUT_MS ?? 55000);
+  if (!Number.isFinite(raw) || raw <= 0) return 55000;
+  return Math.min(Math.max(Math.floor(raw), 5000), 120000);
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -47,7 +50,55 @@ export interface AiServiceChatResponse {
   mode: string;
 }
 
-export async function callAiServiceChat(input: {
+export async function pingAiService(timeoutMs = 15000): Promise<boolean> {
+  const base = aiServiceBaseUrl();
+  if (!base) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(Math.max(timeoutMs, 1000), 30000));
+  try {
+    const res = await fetch(`${base.replace(/\/$/, '')}/health`, {
+      method: 'GET',
+      headers: { ...(aiServiceToken() ? { 'x-ai-service-token': aiServiceToken() } : {}) },
+      signal: controller.signal,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function isColdStartError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /timed out|timeout|abort|fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN|EPIPE/i.test(message);
+}
+
+export async function callAiServiceChatWithColdRetry(input: {
+  courseId: string;
+  question: string;
+  mode: string;
+  topK?: number;
+}): Promise<AiServiceChatResponse | null> {
+  try {
+    return await callAiServiceChatInner(input);
+  } catch (err) {
+    // ONE bounded recovery attempt: the first call often wakes a sleeping
+    // free-tier service; a short ping lets it boot, then exactly one retry.
+    if (!isColdStartError(err)) throw err;
+    const warm = await pingAiService(20000);
+    void warm;
+    return await callAiServiceChatInner(input);
+  }
+}
+
+export async function callAiServiceChat(
+  input: { courseId: string; question: string; mode: string; topK?: number },
+): Promise<AiServiceChatResponse | null> {
+  return callAiServiceChatWithColdRetry(input);
+}
+
+async function callAiServiceChatInner(input: {
   courseId: string;
   question: string;
   mode: string;

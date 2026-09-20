@@ -13,6 +13,12 @@ import {
 } from '@/types';
 
 export const aiService = {
+  // Pre-warm the AI service when the Tutor page opens (bounded, background).
+  async warmup(): Promise<{ warm: boolean }> {
+    const response = await api.get<{ warm: boolean }>('/ai/warmup', { timeout: 25000 });
+    return response.data;
+  },
+
   // AI Tutor — session + messages (real endpoints)
   async createChatSession(courseId: string, mode?: AIMode): Promise<ChatSession> {
     const response = await api.post<ChatSession>('/ai/chat/sessions', { courseId, mode });
@@ -29,13 +35,14 @@ export const aiService = {
     content: string,
     topK?: number
   ): Promise<ChatMessage> {
-    // Bounded client timeout: free-tier cold starts can stall a request for
-    // minutes while axios waits indefinitely (endless typing dots). Abort at
-    // 100s so EVERY request ends in success/error/timeout with retry offered.
+    // Bounded client timeout aligned with the backend budget (55s per
+    // attempt + one cold-retry ≈ up to ~130s worst case). 140s client abort
+    // guarantees EVERY request settles; the page safety net shows the
+    // "waking" state well before this fires.
     const response = await api.post<ChatMessage>(
       `/ai/chat/sessions/${sessionId}/messages`,
       { content, topK },
-      { timeout: 100000 }
+      { timeout: 140000 }
     );
     return response.data;
   },
