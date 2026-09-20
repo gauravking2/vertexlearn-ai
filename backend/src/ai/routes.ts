@@ -93,6 +93,9 @@ function aiProviderError(err: unknown): ApiError {
   if (code === 'AI_TIMEOUT' || status === 504) {
     return new ApiError(504, 'AI_TIMEOUT', 'AI Tutor took too long to respond. Please try again.');
   }
+  if (/timed out|timeout|abort/i.test(message)) {
+    return new ApiError(504, 'AI_TIMEOUT', 'AI Tutor took too long to respond. Please try again.');
+  }
   if (/AI_TUTOR_API_KEY|GEMINI_API_KEY|not configured/i.test(message)) {
     return new ApiError(503, 'AI_NOT_CONFIGURED', 'AI Tutor configuration is invalid. Please contact the administrator.');
   }

@@ -24,6 +24,22 @@ export function isAiServiceConfigured(): boolean {
   return Boolean(aiServiceBaseUrl());
 }
 
+export function aiServiceTimeoutMs(): number {
+  const raw = Number(process.env.AI_SERVICE_TIMEOUT_MS ?? 90000);
+  if (!Number.isFinite(raw) || raw <= 0) return 90000;
+  return Math.min(Math.max(Math.floor(raw), 5000), 180000);
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  }) as Promise<T>;
+}
+
 export interface AiServiceChatResponse {
   answer: string;
   grounded: boolean;
@@ -39,11 +55,15 @@ export async function callAiServiceChat(input: {
 }): Promise<AiServiceChatResponse | null> {
   const base = aiServiceBaseUrl();
   if (!base) return null;
-  const res = await fetch(`${base.replace(/\/$/, '')}/v1/chat/answer`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...(aiServiceToken() ? { 'x-ai-service-token': aiServiceToken() } : {}) },
-    body: JSON.stringify({ course_id: input.courseId, question: input.question, mode: input.mode, top_k: input.topK ?? 5 }),
-  });
+  const res = await withTimeout(
+    fetch(`${base.replace(/\/$/, '')}/v1/chat/answer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(aiServiceToken() ? { 'x-ai-service-token': aiServiceToken() } : {}) },
+      body: JSON.stringify({ course_id: input.courseId, question: input.question, mode: input.mode, top_k: input.topK ?? 5 }),
+    }),
+    aiServiceTimeoutMs(),
+    'AI service chat',
+  );
   if (!res.ok) {
     // Carry the ai-service coarse error code so the caller can map 429 /
     // AI_NOT_CONFIGURED / AI_BAD_REQUEST to safe user-facing categories.
@@ -63,11 +83,15 @@ export async function callAiServiceChat(input: {
 export async function callAiServiceGenerate<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const base = aiServiceBaseUrl();
   if (!base) throw new Error('AI service is not configured');
-  const res = await fetch(`${base.replace(/\/$/, '')}${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...(aiServiceToken() ? { 'x-ai-service-token': aiServiceToken() } : {}) },
-    body: JSON.stringify(body),
-  });
+  const res = await withTimeout(
+    fetch(`${base.replace(/\/$/, '')}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(aiServiceToken() ? { 'x-ai-service-token': aiServiceToken() } : {}) },
+      body: JSON.stringify(body),
+    }),
+    aiServiceTimeoutMs(),
+    'AI service request',
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`AI service error ${res.status}: ${text.slice(0, 200)}`);

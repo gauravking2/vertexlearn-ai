@@ -39,6 +39,14 @@ export const AITutorPage = () => {
   const [message, setMessage] = useState('');
   const [selectedMode, setSelectedMode] = useState<AIMode>('intermediate');
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+  // Safety net: the send mutation resolves on success/error, but if the
+  // transport ever hangs without settling, force-clear the sending state so
+  // the typing indicator can never spin forever. Cleared on next send.
+  const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sendStuck, setSendStuck] = useState(false);
+  useEffect(() => () => {
+    if (stuckTimer.current) clearTimeout(stuckTimer.current);
+  }, []);
 
   const messages: UIMessage[] = (messagesData?.data ?? []).map((m: any) => ({
     id: m.id,
@@ -64,14 +72,25 @@ export const AITutorPage = () => {
   const sendText = (text: string) => {
     if (!activeSessionId || !text.trim()) return;
     resetSend();
+    setSendStuck(false);
+    if (stuckTimer.current) clearTimeout(stuckTimer.current);
+    // If the request has not settled after the client timeout + margin, show
+    // the stuck warning with retry instead of an endless typing indicator.
+    stuckTimer.current = setTimeout(() => setSendStuck(true), 110000);
     setPendingUserMessage(text);
     setMessage('');
     sendMessage(
       { sessionId: activeSessionId, message: text },
       {
-        onSuccess: () => setPendingUserMessage(null),
+        onSuccess: () => {
+          if (stuckTimer.current) clearTimeout(stuckTimer.current);
+          setSendStuck(false);
+          setPendingUserMessage(null);
+        },
         // Clear the stuck pending bubble, restore the text for one-click retry.
         onError: () => {
+          if (stuckTimer.current) clearTimeout(stuckTimer.current);
+          setSendStuck(false);
           setPendingUserMessage(null);
           setMessage(text);
         },
@@ -83,6 +102,8 @@ export const AITutorPage = () => {
 
   const handleDismissSendError = () => {
     resetSend();
+    setSendStuck(false);
+    if (stuckTimer.current) clearTimeout(stuckTimer.current);
     setPendingUserMessage(null);
   };
 
@@ -264,7 +285,7 @@ export const AITutorPage = () => {
                 </div>
               )}
 
-              {sendingMessage && (
+              {sendingMessage && !sendStuck && (
                 <div className="flex gap-3 vl-msg-in">
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center shrink-0" aria-hidden="true">
                     <Bot className="text-white" size={16} />
@@ -275,6 +296,19 @@ export const AITutorPage = () => {
                       <span className="w-2 h-2 bg-[#7C3AED] rounded-full vl-dot" />
                       <span className="w-2 h-2 bg-[#7C3AED] rounded-full vl-dot" />
                     </div>
+                  </div>
+                </div>
+              )}
+              {sendStuck && sendingMessage && (
+                <div className="p-3 bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-200 dark:border-yellow-900 rounded-xl vl-msg-in" role="alert">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-2">
+                    Still waiting for the tutor (over 110s) — the AI service may be waking from sleep. Your question is kept below; wait a little longer or retry.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => pendingUserMessage && sendText(pendingUserMessage)}>
+                      <RefreshCw size={14} aria-hidden="true" /> Retry
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={handleDismissSendError}>Dismiss</Button>
                   </div>
                 </div>
               )}

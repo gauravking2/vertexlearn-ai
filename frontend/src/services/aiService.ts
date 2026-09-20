@@ -29,10 +29,14 @@ export const aiService = {
     content: string,
     topK?: number
   ): Promise<ChatMessage> {
-    const response = await api.post<ChatMessage>(`/ai/chat/sessions/${sessionId}/messages`, {
-      content,
-      topK,
-    });
+    // Bounded client timeout: free-tier cold starts can stall a request for
+    // minutes while axios waits indefinitely (endless typing dots). Abort at
+    // 100s so EVERY request ends in success/error/timeout with retry offered.
+    const response = await api.post<ChatMessage>(
+      `/ai/chat/sessions/${sessionId}/messages`,
+      { content, topK },
+      { timeout: 100000 }
+    );
     return response.data;
   },
 
