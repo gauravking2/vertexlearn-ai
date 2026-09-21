@@ -23,17 +23,22 @@ function getPool(): Pool {
   if (!pool) {
     const databaseUrl = process.env.DATABASE_URL ?? '';
     if (!databaseUrl) throw new Error('DATABASE_URL is not configured');
-    // Supabase pooler (Supavisor, port 5432/6543) and most managed Postgres
-    // endpoints present a certificate chain the container CA bundle does not
-    // trust (SELF_SIGNED_CERT_IN_CHAIN). Refusing to verify only the chain
-    // (traffic stays TLS-encrypted) keeps Railway/Supabase deploys alive.
-    // Local plain-TCP Postgres (no sslmode) is untouched. An explicit
-    // PGSSL_STRICT=1 restores full verification for environments that need it.
+    // TLS policy per environment (Railway fix + local regression fix):
+    // - explicit sslmode=disable (or a host that resolves to this Compose
+    //   stack / loopback without any sslmode) means plain TCP: pass NO ssl
+    //   option so pg never attempts STARTTLS. Sending any `ssl` object
+    //   against a non-TLS server fails with "server does not support SSL".
+    // - anywhere else (Supabase pooler, managed Postgres), the chain may be
+    //   untrusted (SELF_SIGNED_CERT_IN_CHAIN): keep TLS on but skip chain
+    //   verification unless PGSSL_STRICT=1 restores full verification.
     const strict = process.env.PGSSL_STRICT === '1';
-    const wantsTls = strict || !databaseUrl.includes('sslmode=disable');
+    const low = databaseUrl.toLowerCase();
+    const explicitDisable = low.includes('sslmode=disable');
+    const looksLocal = /localhost|127\.0\.0\.1|postgres|redis|minio/.test(low);
+    const useTls = strict || (!explicitDisable && !looksLocal);
     pool = new PgPool({
       connectionString: databaseUrl,
-      ssl: wantsTls ? { rejectUnauthorized: strict } : false,
+      ...(useTls ? { ssl: { rejectUnauthorized: strict } } : {}),
     });
   }
   return pool;

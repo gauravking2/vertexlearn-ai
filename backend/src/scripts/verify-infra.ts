@@ -36,9 +36,11 @@ async function checkPostgres(): Promise<Pool | undefined> {
   }
   const url = process.env.DATABASE_URL as string;
   const strict = process.env.PGSSL_STRICT === '1';
+  const low = url.toLowerCase();
+  const plainTcp = low.includes('sslmode=disable') || /localhost|127\.0\.0\.1|postgres|redis|minio/.test(low);
   const pool = new Pool({
     connectionString: url,
-    ssl: strict || !url.includes('sslmode=disable') ? { rejectUnauthorized: strict } : false,
+    ...(strict || !plainTcp ? { ssl: { rejectUnauthorized: strict } } : {}),
     connectionTimeoutMillis: 5000,
   });
   try {
