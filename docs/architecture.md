@@ -16,25 +16,9 @@
   `rag/` (chunking/embeddings/retriever), `recommendation/`, `models/`,
   `core/` (config/errors/logging/llm). Health at `GET /health`.
 - `infra/docker-compose.yml` — local stack: `postgres` (pgvector/pg15),
-  `redis` (7-alpine), `backend` (Node 20). AI service runs separately via
-  `ai-service/Dockerfile` (`uvicorn main:app --port 8000`).
-
-## System map
-
-- `frontend/` — React scaffolding only in Phase 1. Full UI in a later phase.
-- `backend/` — Express + TypeScript REST API under `/api/v1`. Phase 1 scope:
-  auth (JWT), RBAC (student/instructor/admin), course/module/lecture foundation.
-- `ai-service/` — FastAPI scaffolding only. RAG pipeline is explicitly out of Phase 1.
-- `infra/docker-compose.yml` — local stack: `postgres` (pgvector/pg15),
-  `redis` (7-alpine), `backend` (Node 20).
-- Postgres is the system of record, including the later `document_chunks`
-  vector table (PRD specifies an IVFFLAT index — preserved for the AI phase;
-  pgvector is enabled now via `infra/postgres/init/01-extensions.sql`).
-- Redis in Phase 2 remains service + configuration foundation (rate-limit
-  counters, future cache/queue). No queues are built in Phase 2.
-- Phase 1 code is preserved untouched in behavior: auth, RBAC, course/module/
-  lecture foundation. Phase 2 adds `backend/src/learning/*`,
-  `backend/src/storage/objectStore.ts`, and migration `002_phase2_learning_core.sql`.
+  `redis` (7-alpine), `minio` (+ `minio-init` bucket bootstrap), `backend`
+  (Node 20), `ai-service` (Python 3.11, `uvicorn main:app --port 8000`),
+  `frontend` (production build served on :3000).
 
 ## Authentication + RBAC
 

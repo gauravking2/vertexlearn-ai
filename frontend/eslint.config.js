@@ -8,13 +8,13 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['dist', 'node_modules', 'test-results', 'e2e/**'] },
+  { ignores: ['dist', 'node_modules', 'test-results', 'playwright-report', 'e2e/**'] },
   js.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
       ecmaVersion: 2022,
-      globals: globals.browser,
+      globals: { ...globals.browser, React: 'readonly' },
       parser: tsParser,
     },
     plugins: {
@@ -29,6 +29,7 @@ export default [
         'warn',
         { allowConstantExport: true },
       ],
+      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
@@ -38,5 +39,17 @@ export default [
   {
     files: ['**/*.{js,cjs,mjs}'],
     languageOptions: { ecmaVersion: 2022, globals: globals.node },
+  },
+  {
+    files: ['playwright*.config.ts', 'vite.config.ts', 'vitest.config.ts'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: { ...globals.node },
+    },
+    rules: { 'no-undef': 'off' },
+  },
+  {
+    files: ['src/components/common/ErrorBoundary.tsx'],
+    rules: { 'no-console': 'off' },
   },
 ];

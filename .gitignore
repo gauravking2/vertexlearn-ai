@@ -25,3 +25,5 @@ __pycache__/
 .pytest_cache/
 # Local agent scratch
 .commandcode/
+.agents/
+.utim_tmp/

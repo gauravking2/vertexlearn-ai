@@ -34,7 +34,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: unknown): void {
     // Visible in devtools; no external reporting wired in this phase.
-    // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error);
   }
 
