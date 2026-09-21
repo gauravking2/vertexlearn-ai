@@ -23,19 +23,27 @@ function getPool(): Pool {
   if (!pool) {
     const databaseUrl = process.env.DATABASE_URL ?? '';
     if (!databaseUrl) throw new Error('DATABASE_URL is not configured');
-    // TLS policy per environment (Railway fix + local regression fix):
-    // - explicit sslmode=disable (or a host that resolves to this Compose
-    //   stack / loopback without any sslmode) means plain TCP: pass NO ssl
-    //   option so pg never attempts STARTTLS. Sending any `ssl` object
-    //   against a non-TLS server fails with "server does not support SSL".
-    // - anywhere else (Supabase pooler, managed Postgres), the chain may be
-    //   untrusted (SELF_SIGNED_CERT_IN_CHAIN): keep TLS on but skip chain
+    // TLS policy per host (Railway fix + local regression fix):
+    // - Managed Postgres (Supabase pooler, *.supabase.co, or any URL carrying
+    //   an sslmode=require/prefer/verify-*/allow param): keep TLS on. The
+    //   chain may be untrusted (SELF_SIGNED_CERT_IN_CHAIN), so skip chain
     //   verification unless PGSSL_STRICT=1 restores full verification.
+    // - Plain-TCP Compose/localhost (loopback or in-stack hostname like
+    //   `postgres` with NO sslmode param): pass NO ssl option so pg never
+    //   attempts STARTTLS ("server does not support SSL" otherwise).
     const strict = process.env.PGSSL_STRICT === '1';
     const low = databaseUrl.toLowerCase();
-    const explicitDisable = low.includes('sslmode=disable');
-    const looksLocal = /localhost|127\.0\.0\.1|postgres|redis|minio/.test(low);
-    const useTls = strict || (!explicitDisable && !looksLocal);
+    const sslParam = /[?&]sslmode=([^&]*)/.exec(low)?.[1] ?? '';
+    const tlsParam = sslParam !== '' && sslParam !== 'disable';
+    let host = '';
+    try {
+      host = new URL(databaseUrl).hostname.toLowerCase();
+    } catch {
+      host = '';
+    }
+    const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    const inStackHost = host === 'postgres' || host === 'redis' || host === 'minio';
+    const useTls = strict || tlsParam || (!loopback && !inStackHost);
     pool = new PgPool({
       connectionString: databaseUrl,
       ...(useTls ? { ssl: { rejectUnauthorized: strict } } : {}),
