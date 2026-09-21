@@ -23,9 +23,17 @@ function getPool(): Pool {
   if (!pool) {
     const databaseUrl = process.env.DATABASE_URL ?? '';
     if (!databaseUrl) throw new Error('DATABASE_URL is not configured');
+    // Supabase pooler (Supavisor, port 5432/6543) and most managed Postgres
+    // endpoints present a certificate chain the container CA bundle does not
+    // trust (SELF_SIGNED_CERT_IN_CHAIN). Refusing to verify only the chain
+    // (traffic stays TLS-encrypted) keeps Railway/Supabase deploys alive.
+    // Local plain-TCP Postgres (no sslmode) is untouched. An explicit
+    // PGSSL_STRICT=1 restores full verification for environments that need it.
+    const strict = process.env.PGSSL_STRICT === '1';
+    const wantsTls = strict || !databaseUrl.includes('sslmode=disable');
     pool = new PgPool({
       connectionString: databaseUrl,
-      ssl: databaseUrl.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
+      ssl: wantsTls ? { rejectUnauthorized: strict } : false,
     });
   }
   return pool;

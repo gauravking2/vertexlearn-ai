@@ -34,7 +34,13 @@ async function checkPostgres(): Promise<Pool | undefined> {
     report('postgres.connectivity', 'SKIP', 'DATABASE_URL is not set');
     return undefined;
   }
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
+  const url = process.env.DATABASE_URL as string;
+  const strict = process.env.PGSSL_STRICT === '1';
+  const pool = new Pool({
+    connectionString: url,
+    ssl: strict || !url.includes('sslmode=disable') ? { rejectUnauthorized: strict } : false,
+    connectionTimeoutMillis: 5000,
+  });
   try {
     const version = await pool.query(`SELECT version() AS v`);
     report('postgres.connectivity', 'PASS', `connected (${String((version.rows[0] as { v: string }).v).split(' ').slice(0, 2).join(' ')})`);

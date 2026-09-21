@@ -39,7 +39,19 @@ class PostgresChunkStore:
     def _connect(self):
         import psycopg2
 
-        return psycopg2.connect(self.database_url)
+        # Supabase pooler (and most managed Postgres) presents a certificate
+        # chain the container CA bundle may not trust (self-signed in chain).
+        # psycopg2 honors sslmode=require for TLS but still verifies; wrap the
+        # context so the chain is accepted instead of crashing retrieval.
+        import ssl
+
+        url = self.database_url
+        if "sslmode=disable" in url:
+            return psycopg2.connect(url)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return psycopg2.connect(url, sslmode="require", sslcontext=ctx)
 
     def chunks_for_course(self, course_id: str) -> list[dict]:
         conn = self._connect()
