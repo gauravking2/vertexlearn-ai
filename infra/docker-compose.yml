@@ -151,10 +151,11 @@ services:
     # so migrations run from compiled output via `migrate:prod`.
     command: ["sh", "-c", "npm run migrate:prod && npm start"]
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:4000/healthz"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   frontend:
     build:
