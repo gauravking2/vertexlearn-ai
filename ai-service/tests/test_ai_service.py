@@ -137,6 +137,46 @@ def test_chat_endpoint_no_context_grounded_limitation():
     assert "could not find" in res.json()["answer"].lower()
 
 
+def test_chat_endpoint_low_support_still_calls_provider():
+    from app.core import llm as llm_module
+
+    class _StubLlm:
+        name = "stub-openrouter"
+
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+            self.calls += 1
+            return "Stubbed grounded answer [S1]."
+
+    stub = _StubLlm()
+    llm_module.set_llm_client(stub)
+    try:
+        store = MemoryChunkStore()
+        store.seed(
+            [
+                {
+                    "id": "c1",
+                    "course_id": "A",
+                    "lecture_id": "lecA",
+                    "lecture_title": "Alpha",
+                    "chunk_index": 0,
+                    "text": "photosynthesis releases oxygen",
+                    "embedding": deterministic_embedding("photosynthesis releases oxygen", 32),
+                }
+            ]
+        )
+        set_store(store)
+        client = TestClient(create_app())
+        res = client.post("/v1/chat/answer", json={"course_id": "A", "question": "unrelated gibberish xyzzy", "mode": "beginner"})
+        assert res.status_code == 200
+        assert stub.calls == 1
+        assert "Stubbed grounded answer" in res.json()["answer"]
+    finally:
+        llm_module.set_llm_client(None)
+
+
 def test_chat_rejects_missing_course():
     client = TestClient(create_app())
     res = client.post("/v1/chat/answer", json={"course_id": "", "question": "hi"})

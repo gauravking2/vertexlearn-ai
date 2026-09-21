@@ -66,12 +66,20 @@ async def chat_answer(body: ChatAnswerRequest, x_ai_service_token: str | None = 
     ]
     results = retrieve_course_chunks(body.course_id, body.question, stored, body.top_k)
     assert_no_cross_course(results, body.course_id)
+    # Only a truly empty retrieval exits early. Low cosine scores (common
+    # with mixed embedding providers) are advisory: the grounded LLM prompt
+    # (answer ONLY from <context>) is the guardrail, not a silent skip.
+    if not results:
+        return ChatAnswerResponse(answer=f"{NO_CONTEXT} The retrieved lectures do not cover your question.", grounded=False, sources=[], mode=body.mode)
     sources = [
         Source(ref=f"S{i+1}", lecture_id=r.chunk.lecture_id, lecture_title=r.chunk.lecture_title, chunk_index=r.chunk.chunk_index, score=r.score)
         for i, r in enumerate(results)
     ]
-    if not has_support(results):
-        return ChatAnswerResponse(answer=f"{NO_CONTEXT} The retrieved lectures do not cover your question.", grounded=False, sources=sources, mode=body.mode)
+    # Threshold is advisory only: low cosine scores (common with mixed
+    # embedding providers) must NEVER skip the grounded provider call, or the
+    # Tutor goes silent with zero diagnostics. The grounded system prompt
+    # (answer ONLY from <context>, say so when unsupported) is the guardrail.
+    grounded_flag = has_support(results)
     context = "\n\n".join(f"[S{i+1}] ({r.chunk.lecture_title}) {r.chunk.text}" for i, r in enumerate(results))
     llm = get_llm_client()
     started = time.monotonic()
@@ -81,8 +89,8 @@ async def chat_answer(body: ChatAnswerRequest, x_ai_service_token: str | None = 
         logger.error("llm chat failed course_id=%s err=%s", body.course_id, type(exc).__name__)
         raise _llm_provider_api_error(exc) from exc
     latency_ms = int((time.monotonic() - started) * 1000)
-    logger.info("chat answered course_id=%s grounded=true sources=%d latency_ms=%d", body.course_id, len(sources), latency_ms)
-    return ChatAnswerResponse(answer=answer, grounded=True, sources=sources, mode=body.mode)
+    logger.info("chat answered course_id=%s grounded=%s sources=%d latency_ms=%d", body.course_id, grounded_flag, len(sources), latency_ms)
+    return ChatAnswerResponse(answer=answer, grounded=grounded_flag, sources=sources, mode=body.mode)
 
 
 @router.post("/internal/embed", response_model=EmbedResponse)

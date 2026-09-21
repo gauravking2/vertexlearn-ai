@@ -180,39 +180,70 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
     const userMessageId = newId();
     await db.query(`INSERT INTO ai_chat_messages (id, session_id, role, content) VALUES ($1, $2, 'user', $3)`, [userMessageId, session.id, body.content]);
 
-    let sources = await retrieveCourseChunks(session.course_id, body.content, topK);
-    sources = sources.filter((s) => s.text && s.text.length > 0);
-    const allowedRefs = new Set(sources.map((_, i) => `[S${i + 1}]`));
+    // Retrieval MUST NOT be a second failure point: run it best-effort so an
+    // embedding outage can never turn a good provider call into a 503.
+    let localSources: { id: string; lectureId: string | null; lectureTitle: string; chunkIndex: number; text: string; score: number }[] = [];
+    try {
+      const retrieved = await retrieveCourseChunks(session.course_id, body.content, topK);
+      localSources = retrieved.filter((s) => s.text && s.text.length > 0);
+    } catch {
+      localSources = [];
+    }
+    const localAllowedRefs = new Set(localSources.map((_, i) => `[S${i + 1}]`));
     let answer: string;
     let grounded: boolean;
+    // Single answer path: the AI service owns course-scoped RAG. The
+    // backend never answers locally here — if the remote call fails the
+    // request MUST surface an error (never an empty answer row that the
+    // frontend renders as silence), and if it is unconfigured the request
+    // MUST fail closed instead of silently returning nothing. In tests the
+    // AI service is unset, so the local mock LLM path stays available.
     if (isAiServiceConfigured()) {
+      let sources: { id: string; lectureId: string | null; lectureTitle: string; chunkIndex: number; text: string; score: number }[];
       try {
         const remote = await callAiServiceChat({ courseId: session.course_id, question: body.content, mode: session.mode, topK });
-        if (remote) {
-          const remoteRefs = new Set((remote.sources ?? []).map((s) => s.ref));
-          answer = stripForeignCitations(remote.answer, new Set([...allowedRefs, ...remoteRefs]));
-          grounded = remote.grounded;
-          sources = (remote.sources ?? []).map((s) => ({
-            id: `${s.ref}`,
-            lectureId: s.lectureId,
-            lectureTitle: s.lectureTitle,
-            chunkIndex: s.chunkIndex,
-            text: '',
-            score: s.score,
-          }));
-        } else {
-          answer = '';
-          grounded = false;
+        if (!remote || typeof remote.answer !== 'string' || !remote.answer.trim()) {
+          next(new ApiError(503, 'PROVIDER_UNAVAILABLE', 'AI Tutor is temporarily unavailable. Please try again.'));
+          return;
         }
+        const remoteRefs = new Set((remote.sources ?? []).map((s) => s.ref));
+        answer = stripForeignCitations(remote.answer, new Set([...localAllowedRefs, ...remoteRefs]));
+        grounded = remote.grounded;
+        sources = (remote.sources ?? []).map((s) => ({
+          id: `${s.ref}`,
+          lectureId: s.lectureId,
+          lectureTitle: s.lectureTitle,
+          chunkIndex: s.chunkIndex,
+          text: '',
+          score: s.score,
+        }));
       } catch (err) {
         next(aiProviderError(err));
         return;
       }
-    } else if (!hasRetrievalSupport(sources)) {
+      const sourceRows = sources.map((s, i) => ({
+        ref: `S${i + 1}`,
+        lectureId: s.lectureId,
+        lectureTitle: s.lectureTitle,
+        chunkIndex: s.chunkIndex,
+        score: Number(s.score ?? 0),
+      }));
+      const assistantId = newId();
+      await db.query(`INSERT INTO ai_chat_messages (id, session_id, role, content, sources) VALUES ($1, $2, 'assistant', $3, $4)`, [
+        assistantId,
+        session.id,
+        answer,
+        JSON.stringify(sourceRows),
+      ]);
+      await touchStreak(req.user!.id);
+      res.status(201).json({ userMessageId, assistantMessageId: assistantId, answer, grounded, mode: session.mode, sources: sourceRows });
+      return;
+    }
+    if (!hasRetrievalSupport(localSources)) {
       answer = noContextAnswer();
       grounded = false;
     } else {
-      const citations = toCitations(sources);
+      const citations = toCitations(localSources);
       const llm = getLlmProvider();
       let raw: string;
       try {
@@ -224,10 +255,10 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
         next(aiProviderError(err));
         return;
       }
-      answer = stripForeignCitations(raw, allowedRefs);
+      answer = stripForeignCitations(raw, localAllowedRefs);
       grounded = true;
     }
-    const sourceRows = sources.map((s, i) => ({
+    const sourceRows = localSources.map((s, i) => ({
       ref: `S${i + 1}`,
       lectureId: s.lectureId,
       lectureTitle: s.lectureTitle,
