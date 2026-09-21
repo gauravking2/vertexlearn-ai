@@ -89,8 +89,18 @@ services:
         value: 12
       - key: COOKIE_SECURE
         value: 'true'
-      # AI providers (unchanged runtime: Gemini chat + Gemini embeddings,
-      # OpenRouter AI-Tutor chat). All keys server-side only.
+      # AI providers: Groq is the primary AI Tutor chat route (fast,
+      # reliable, OpenAI-compatible). Gemini keeps embeddings
+      # (gemini-embedding-001 @ VECTOR(1536)); OpenRouter/Mistral/Gemini
+      # chat compat paths stay available. All keys server-side only.
+      - key: AI_TUTOR_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_CHAT_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai
       - key: LLM_PROVIDER
         value: gemini
       - key: LLM_CHAT_MODEL
@@ -161,6 +171,14 @@ services:
           name: vertexlearn-backend
           type: web
           envVarKey: AI_SERVICE_TOKEN
+      - key: AI_TUTOR_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_CHAT_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai
       - key: LLM_PROVIDER
         value: gemini
       - key: LLM_CHAT_MODEL

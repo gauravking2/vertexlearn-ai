@@ -32,6 +32,13 @@ class Settings:
     llm_max_retries: int = field(default_factory=lambda: _int("LLM_MAX_RETRIES", 1))
     # Free-tier runtime key. STRICT: never falls back to the Anthropic key.
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+    # Groq key for AI Tutor chat generation (server-side only). Embeddings
+    # never touch Groq — they stay Gemini/deterministic. Accepts the
+    # AI-tutor override credential as fallback so one configured chat key
+    # keeps the Tutor alive without a second secret to manage.
+    groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", "") or os.getenv("AI_TUTOR_API_KEY", ""))
+    groq_chat_model: str = field(default_factory=lambda: _str("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile"))
+    groq_base_url: str = field(default_factory=lambda: _str("GROQ_BASE_URL", "https://api.groq.com/openai"))
     # AI Tutor chat override: AI_TUTOR_PROVIDER selects the chat generation
     # provider (openrouter | mistral | gemini | anthropic | mock). The key is
     # AI_TUTOR_API_KEY (server-side only). Embeddings stay on Gemini regardless.

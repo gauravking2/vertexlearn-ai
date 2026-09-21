@@ -50,6 +50,16 @@ export function getGeminiApiKey(): string {
   return process.env.GEMINI_API_KEY?.trim() || '';
 }
 
+/** Server-side Groq key for AI Tutor chat. STRICT: never sent to the frontend. */
+export function getGroqApiKey(): string {
+  return process.env.GROQ_API_KEY?.trim() || process.env.AI_TUTOR_API_KEY?.trim() || '';
+}
+
+/** Groq chat model. Blank counts as unset. */
+export function getGroqChatModel(): string {
+  return process.env.GROQ_CHAT_MODEL?.trim() || 'llama-3.3-70b-versatile';
+}
+
 export function getGeminiChatModel(): string {
   // Default is the Google-recommended Flash model: gemini-2.5-flash is
   // retired for new API users (provider 404 names gemini-3.6-flash as the
@@ -287,11 +297,87 @@ class OpenRouterHttpProvider implements LlmProvider {
   }
 }
 
+/**
+ * AI Tutor chat provider (Groq, OpenAI-compatible). Same LlmProvider
+ * interface and the same timeout/retry/logging discipline as the other HTTP
+ * providers. Key is server-side only (GROQ_API_KEY, falling back to the
+ * AI-tutor override AI_TUTOR_API_KEY); never logged, never sent to the
+ * frontend. Used ONLY for tutor chat generation — embeddings
+ * never touch Groq (deterministic fallback is used when no embedding key).
+ * Parsing is OpenAI-shaped: choices[0].message.content.
+ */
+class GroqHttpProvider implements LlmProvider {
+  name = 'groq';
+  async chat(input: ChatCompletionInput): Promise<string> {
+    const apiKey = getGroqApiKey();
+    if (!apiKey) {
+      logger.warn('GROQ_API_KEY unset — using mock LLM output (tests/dev only)');
+      return new MockLlmProvider().chat(input);
+    }
+    const model = getGroqChatModel();
+    const baseUrl = (process.env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai').replace(/\/$/, '');
+    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const started = Date.now();
+        const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${apiKey}`,
+            accept: 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: input.maxTokens ?? 1024,
+            messages: [
+              { role: 'system', content: input.system },
+              { role: 'user', content: input.user },
+            ],
+          }),
+          signal: controller.signal,
+        });
+        const latencyMs = Date.now() - started;
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          // Retry only transient 429/5xx; fail fast on 4xx (auth/model).
+          if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
+            logger.warn({ status: res.status, latencyMs, attempt }, 'LLM provider transient error, retrying');
+            lastError = new Error(`LLM provider error: ${res.status}`);
+            continue;
+          }
+          throw new Error(`LLM provider error: ${res.status} ${text.slice(0, 200)}`);
+        }
+        const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        const text = (body.choices ?? []).map((c) => c.message?.content ?? '').join('\n').trim();
+        logger.info({ provider: 'groq', model, latencyMs }, 'llm chat completed');
+        return text || 'The provider returned an empty response.';
+      } catch (err) {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if ((isAbort || (err instanceof Error && /fetch failed|network/i.test(err.message))) && attempt < maxRetries) {
+          logger.warn({ attempt, timeout: isAbort }, 'LLM request failed transiently, retrying');
+          lastError = err;
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('LLM provider failed');
+  }
+}
+
 export function getLlmProvider(): LlmProvider {
   if (overrideLlm) return overrideLlm;
   const name = getLlmProviderName();
   if (name === 'mock') return new MockLlmProvider();
   if (name === 'gemini') return new GeminiHttpProvider();
+  if (name === 'groq') return new GroqHttpProvider();
   if (name === 'openrouter') return new OpenRouterHttpProvider();
   if (name === 'mistral') return new MistralHttpProvider();
   return new AnthropicHttpProvider();

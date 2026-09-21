@@ -17,6 +17,9 @@ afterEach(() => {
   delete process.env.LLM_CHAT_MODEL;
   delete process.env.LLM_PROVIDER;
   delete process.env.GEMINI_API_KEY;
+  delete process.env.GROQ_API_KEY;
+  delete process.env.GROQ_CHAT_MODEL;
+  delete process.env.GROQ_BASE_URL;
   // AI Tutor override vars (host .env may carry real values — keep tests hermetic)
   delete process.env.AI_TUTOR_PROVIDER;
   delete process.env.AI_TUTOR_API_KEY;
@@ -236,6 +239,69 @@ describe('FINAL Gemini free-tier providers (stub HTTP, no live calls)', () => {
       expect(getEmbeddingProvider().name).toBe('voyage');
     } finally {
       delete process.env.EMBEDDING_API_KEY;
+    }
+  });
+});
+
+describe('FINAL Groq AI Tutor provider (stub HTTP, no live calls)', () => {
+  test('AI_TUTOR_PROVIDER=groq calls the Groq OpenAI-compatible endpoint', async () => {
+    const { getLlmProvider } = await import('../src/ai/llm');
+    process.env.AI_TUTOR_PROVIDER = 'groq';
+    process.env.GROQ_API_KEY = 'test-groq-key';
+    process.env.GROQ_CHAT_MODEL = 'llama-3.3-70b-versatile';
+    const seen: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = [];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation((async (url: unknown, init: unknown) => {
+      const headers = ((init as { headers?: Record<string, string> }).headers ?? {}) as Record<string, string>;
+      seen.push({ url: String(url), headers, body: JSON.parse(String((init as { body?: string }).body ?? '{}')) });
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'stubbed groq answer' } }] }),
+        text: async () => '',
+      };
+    }) as typeof fetch);
+    try {
+      const provider = getLlmProvider();
+      expect(provider.name).toBe('groq');
+      const out = await provider.chat({ system: 'sys', user: 'hello' });
+      expect(out).toBe('stubbed groq answer');
+      expect(seen).toHaveLength(1);
+      expect(seen[0].url).toBe('https://api.groq.com/openai/v1/chat/completions');
+      expect(seen[0].headers.authorization).toBe('Bearer test-groq-key');
+      expect((seen[0].body as { model?: string }).model).toBe('llama-3.3-70b-versatile');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test('groq without a key falls back to mock output (never calls HTTP)', async () => {
+    const { getLlmProvider } = await import('../src/ai/llm');
+    process.env.AI_TUTOR_PROVIDER = 'groq';
+    delete process.env.GROQ_API_KEY;
+    delete process.env.AI_TUTOR_API_KEY;
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('must not call HTTP'));
+    try {
+      const out = await getLlmProvider().chat({ system: 'sys', user: 'hello' });
+      expect(out).toContain('Mock answer');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test('groq 401 fails fast without retry (auth error, not transient)', async () => {
+    const { getLlmProvider } = await import('../src/ai/llm');
+    process.env.AI_TUTOR_PROVIDER = 'groq';
+    process.env.GROQ_API_KEY = 'bad-key';
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation((async () => ({
+      ok: false,
+      status: 401,
+      text: async () => 'invalid api key',
+    })) as unknown as typeof fetch);
+    try {
+      await expect(getLlmProvider().chat({ system: 'sys', user: 'hello' })).rejects.toThrow(/LLM provider error: 401/);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
     }
   });
 });

@@ -35,7 +35,7 @@ export const AITutorPage = () => {
   const { mutate: updateMode } = useUpdateSessionMode();
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const { data: messagesData, isLoading: loadingMessages } = useSessionMessages(activeSessionId ?? undefined);
+  const { data: messagesData, isLoading: loadingMessages, refetch: refetchMessages } = useSessionMessages(activeSessionId ?? undefined);
 
   const [message, setMessage] = useState('');
   const [selectedMode, setSelectedMode] = useState<AIMode>('intermediate');
@@ -46,13 +46,18 @@ export const AITutorPage = () => {
   // Staged loading UX: "Thinking" 0–8s, then "Waking AI Tutor" until the
   // bounded client timeout settles. A stuck-transport safety net swaps the
   // dots for a retry warning if the mutation ever hangs without settling.
+  // The redundant-message safety net re-syncs from the server when the
+  // transport reports success but the refetch lags (prevents a permanent
+  // spinner after an answer was actually stored).
   const phaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [wakingPhase, setWakingPhase] = useState(false);
   const [sendStuck, setSendStuck] = useState(false);
   useEffect(() => () => {
     if (phaseTimer.current) clearTimeout(phaseTimer.current);
     if (stuckTimer.current) clearTimeout(stuckTimer.current);
+    if (resyncTimer.current) clearTimeout(resyncTimer.current);
   }, []);
 
   // Pre-warm: opening the Tutor page pings the AI service in the background
@@ -88,8 +93,10 @@ export const AITutorPage = () => {
   const clearSendTimers = () => {
     if (phaseTimer.current) clearTimeout(phaseTimer.current);
     if (stuckTimer.current) clearTimeout(stuckTimer.current);
+    if (resyncTimer.current) clearTimeout(resyncTimer.current);
     phaseTimer.current = null;
     stuckTimer.current = null;
+    resyncTimer.current = null;
   };
 
   const sendText = (text: string) => {
@@ -117,6 +124,14 @@ export const AITutorPage = () => {
           setSendStuck(false);
           setWakingPhase(false);
           setPendingUserMessage(null);
+          // The mutation invalidates the messages query, but if that
+          // refetch lags (or the tab was backgrounded) the spinner would sit
+          // forever on stale data. Force one bounded re-sync; a second
+          // trailing re-sync catches late-arriving assistant rows.
+          void refetchMessages();
+          resyncTimer.current = setTimeout(() => {
+            void refetchMessages();
+          }, 3000);
         },
         // Clear the stuck pending bubble, restore the text for one-click retry.
         onError: () => {

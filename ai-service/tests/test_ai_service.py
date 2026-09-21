@@ -30,6 +30,9 @@ def _mocked_providers(monkeypatch):
     monkeypatch.delenv("AI_TUTOR_MODEL", raising=False)
     monkeypatch.delenv("AI_TUTOR_CHAT_MODEL", raising=False)
     monkeypatch.delenv("AI_TUTOR_BASE_URL", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_CHAT_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_BASE_URL", raising=False)
     reset_settings()
     set_llm_client(MockLlmClient())
     set_embedding_client(MockEmbeddingClient(dim=32))
@@ -367,3 +370,85 @@ def test_gemini_llm_uses_generate_content(monkeypatch):
     assert out == "stubbed"
     assert ":generateContent" in sent["url"]
     assert "anthropic" not in sent["url"]
+
+
+def test_groq_llm_uses_openai_compatible_endpoint(monkeypatch):
+    """Stubbed HTTP: groq chat hits /v1/chat/completions with Bearer key."""
+    import json
+    import urllib.request
+
+    from app.core.llm import GroqLlmClient, get_llm_client
+
+    sent: dict = {}
+
+    class _FakeRes:
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": "stubbed groq"}}]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _fake_urlopen(req, timeout=None):
+        sent["url"] = req.full_url
+        sent["body"] = json.loads(req.data.decode())
+        sent["headers"] = {k.lower(): v for k, v in req.header_items()}
+        return _FakeRes()
+
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    monkeypatch.setenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    out = GroqLlmClient().chat("sys", "hi", 64)
+    assert out == "stubbed groq"
+    assert sent["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    assert sent["headers"].get("authorization") == "Bearer test-groq-key"
+    assert sent["body"]["model"] == "llama-3.3-70b-versatile"
+
+
+def test_groq_routing_and_no_key_mock(monkeypatch):
+    """AI_TUTOR_PROVIDER=groq routes to Groq; missing key falls back to mock."""
+    import json
+    import urllib.request
+
+    from app.core.config import reset_settings
+    from app.core.llm import get_llm_client, set_llm_client
+
+    monkeypatch.setenv("AI_TUTOR_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    reset_settings()
+    set_llm_client(None)
+    assert get_llm_client().name == "groq"
+
+    class _FakeRes:
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    # Groq 401 fails fast without retry (auth error, not transient).
+    def _fake_401(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 401, "unauthorized", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_401)
+    import urllib.error
+
+    try:
+        get_llm_client().chat("sys", "hi", 64)
+        raise AssertionError("expected 401 to raise")
+    except Exception as exc:
+        assert "401" in str(exc)
+
+    # Missing key never touches HTTP.
+    monkeypatch.delenv("GROQ_API_KEY")
+    reset_settings()
+    calls: list = []
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: calls.append(1) or _FakeRes())
+    out = get_llm_client().chat("sys", "hello world", 64)
+    assert "Mock answer" in out
+    assert calls == []

@@ -30,6 +30,9 @@ export function aiServiceTimeoutMs(): number {
   // one legitimate wake. Never unbounded; retries are handled by the caller.
   // Canonical source is AppConfig (AI_SERVICE_TIMEOUT_MS); direct env read is
   // the fallback for unit-test contexts where config is not loaded.
+  // Groq answers in seconds, so when the AI Tutor chat route is Groq-backed
+  // the window can stay tight — but the AI service still performs retrieval
+  // first, so keep the same bounded budget rather than a second knob.
   let raw = Number(process.env.AI_SERVICE_TIMEOUT_MS ?? NaN);
   if (!Number.isFinite(raw) || raw <= 0) {
     try {
