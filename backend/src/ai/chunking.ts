@@ -1,8 +1,26 @@
+import { getConfig } from '../config';
+
 export interface TextChunk {
   index: number;
   text: string;
   charStart: number;
   charEnd: number;
+}
+
+function chunkSizeDefault(): number {
+  try {
+    return (getConfig() as unknown as { RAG_CHUNK_SIZE?: number }).RAG_CHUNK_SIZE ?? 800;
+  } catch {
+    return Number(process.env.RAG_CHUNK_SIZE ?? 800) || 800;
+  }
+}
+
+function chunkOverlapDefault(): number {
+  try {
+    return (getConfig() as unknown as { RAG_CHUNK_OVERLAP?: number }).RAG_CHUNK_OVERLAP ?? 200;
+  } catch {
+    return Number(process.env.RAG_CHUNK_OVERLAP ?? 200) || 200;
+  }
 }
 
 export const RAG_CHUNK_SIZE = 800;
@@ -16,7 +34,7 @@ export function splitSentences(normalized: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-export function chunkTranscript(transcript: string, size = RAG_CHUNK_SIZE, overlap = RAG_CHUNK_OVERLAP): TextChunk[] {
+export function chunkTranscript(transcript: string, size = chunkSizeDefault(), overlap = chunkOverlapDefault()): TextChunk[] {
   const normalized = transcript.replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
   const sentences = splitSentences(normalized);
