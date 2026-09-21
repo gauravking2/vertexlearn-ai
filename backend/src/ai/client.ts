@@ -98,7 +98,12 @@ export async function callAiServiceChatWithColdRetry(input: {
   } catch (err) {
     // ONE bounded recovery attempt: the first call often wakes a sleeping
     // free-tier service; a short ping lets it boot, then exactly one retry.
+    // A provider 4xx (bad key/model) or a provider timeout is NOT a cold
+    // start — retrying those only doubles a 2-minute hang, so rethrow them
+    // immediately instead of burning a second full budget.
     if (!isColdStartError(err)) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    if (/AI service error: 4|AI_TIMEOUT|AI_NOT_CONFIGURED|AI_BAD_REQUEST/i.test(message)) throw err;
     const warm = await pingAiService(20000);
     void warm;
     return await callAiServiceChatInner(input);
