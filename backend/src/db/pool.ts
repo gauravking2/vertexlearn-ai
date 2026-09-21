@@ -23,7 +23,10 @@ function getPool(): Pool {
   if (!pool) {
     const databaseUrl = process.env.DATABASE_URL ?? '';
     if (!databaseUrl) throw new Error('DATABASE_URL is not configured');
-    pool = new PgPool({ connectionString: databaseUrl });
+    pool = new PgPool({
+      connectionString: databaseUrl,
+      ssl: databaseUrl.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
+    });
   }
   return pool;
 }
