@@ -47,8 +47,28 @@ function getPool(): Pool {
 export const db: Db = {
   query: async (text: string, params?: unknown[]) => {
     const p = getPool();
-    const res = await p.query(text, params as unknown[]);
-    return { rows: res.rows as Record<string, unknown>[], rowCount: res.rowCount };
+    try {
+      const res = await p.query(text, params as unknown[]);
+      return { rows: res.rows as Record<string, unknown>[], rowCount: res.rowCount };
+    } catch (err) {
+      // Supabase pooler (Supavisor) drops idle pooled connections without
+      // notice: the first query on a stale socket fails with ECONNRESET /
+      // "Connection terminated unexpectedly". Retry once on a FRESH pool so
+      // one dead socket can never 500 an otherwise healthy request.
+      const message = err instanceof Error ? err.message : String(err);
+      if (/connection terminated unexpectedly|ECONNRESET|ECONNREFUSED|57P01|57P02/i.test(message)) {
+        try {
+          await (p as unknown as { end: () => Promise<void> }).end().catch(() => undefined);
+        } catch {
+          /* ignore close errors */
+        }
+        pool = undefined;
+        const fresh = getPool();
+        const res = await fresh.query(text, params as unknown[]);
+        return { rows: res.rows as Record<string, unknown>[], rowCount: res.rowCount };
+      }
+      throw err;
+    }
   },
 };
 
