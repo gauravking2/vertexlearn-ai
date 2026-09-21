@@ -39,6 +39,12 @@ class Settings:
     groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", "") or os.getenv("AI_TUTOR_API_KEY", ""))
     groq_chat_model: str = field(default_factory=lambda: _str("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile"))
     groq_base_url: str = field(default_factory=lambda: _str("GROQ_BASE_URL", "https://api.groq.com/openai"))
+    # Pollinations key for AI Tutor chat (server-side only). Live-verified
+    # working route. Embeddings never touch Pollinations.
+    pollinations_api_key: str = field(default_factory=lambda: os.getenv("POLLINATIONS_API_KEY", ""))
+    pollinations_chat_model: str = field(default_factory=lambda: _str("POLLINATIONS_CHAT_MODEL", "openai"))
+    pollinations_base_url: str = field(default_factory=lambda: _str("POLLINATIONS_BASE_URL", "https://text.pollinations.ai/openai"))
+    pollinations_timeout_s: int = field(default_factory=lambda: _int("POLLINATIONS_TIMEOUT_S", 60))
     # AI Tutor chat override: AI_TUTOR_PROVIDER selects the chat generation
     # provider (openrouter | mistral | gemini | anthropic | mock). The key is
     # AI_TUTOR_API_KEY (server-side only). Embeddings stay on Gemini regardless.

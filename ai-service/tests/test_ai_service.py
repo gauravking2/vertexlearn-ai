@@ -33,6 +33,10 @@ def _mocked_providers(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_CHAT_MODEL", raising=False)
     monkeypatch.delenv("GROQ_BASE_URL", raising=False)
+    monkeypatch.delenv("POLLINATIONS_API_KEY", raising=False)
+    monkeypatch.delenv("POLLINATIONS_CHAT_MODEL", raising=False)
+    monkeypatch.delenv("POLLINATIONS_BASE_URL", raising=False)
+    monkeypatch.delenv("POLLINATIONS_TIMEOUT_S", raising=False)
     reset_settings()
     set_llm_client(MockLlmClient())
     set_embedding_client(MockEmbeddingClient(dim=32))
@@ -452,3 +456,78 @@ def test_groq_routing_and_no_key_mock(monkeypatch):
     out = get_llm_client().chat("sys", "hello world", 64)
     assert "Mock answer" in out
     assert calls == []
+
+
+def test_pollinations_llm_sends_key_and_parses(monkeypatch):
+    """Stubbed HTTP: pollinations chat hits /chat/completions with Bearer key."""
+    import json
+    import urllib.request
+
+    from app.core.llm import PollinationsLlmClient, get_llm_client
+
+    sent: dict = {}
+
+    class _FakeRes:
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": "stubbed pollinations"}}]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _fake_urlopen(req, timeout=None):
+        sent["url"] = req.full_url
+        sent["body"] = json.loads(req.data.decode())
+        sent["headers"] = {k.lower(): v for k, v in req.header_items()}
+        return _FakeRes()
+
+    monkeypatch.setenv("POLLINATIONS_API_KEY", "test-pollinations-key")
+    monkeypatch.setenv("POLLINATIONS_CHAT_MODEL", "openai")
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    out = PollinationsLlmClient().chat("sys", "hi", 64)
+    assert out == "stubbed pollinations"
+    assert sent["url"] == "https://text.pollinations.ai/openai/chat/completions"
+    assert sent["headers"].get("authorization") == "Bearer test-pollinations-key"
+    assert sent["body"]["model"] == "openai"
+
+
+def test_pollinations_routing_and_keyless(monkeypatch):
+    """AI_TUTOR_PROVIDER=pollinations routes to Pollinations; empty key still calls HTTP."""
+    import json
+    import urllib.request
+
+    from app.core.config import reset_settings
+    from app.core.llm import get_llm_client, set_llm_client
+
+    monkeypatch.setenv("AI_TUTOR_PROVIDER", "pollinations")
+    reset_settings()
+    set_llm_client(None)
+    assert get_llm_client().name == "pollinations"
+
+    class _FakeRes:
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": "keyless"}}]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    calls: list = []
+    sent: dict = {}
+
+    def _fake_urlopen(req, timeout=None):
+        calls.append(1)
+        sent["headers"] = {k.lower(): v for k, v in req.header_items()}
+        return _FakeRes()
+
+    monkeypatch.delenv("POLLINATIONS_API_KEY", raising=False)
+    reset_settings()
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    out = get_llm_client().chat("sys", "hi", 64)
+    assert out == "keyless"
+    assert len(calls) == 1
+    assert "authorization" not in sent["headers"]

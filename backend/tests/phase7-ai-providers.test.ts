@@ -20,6 +20,10 @@ afterEach(() => {
   delete process.env.GROQ_API_KEY;
   delete process.env.GROQ_CHAT_MODEL;
   delete process.env.GROQ_BASE_URL;
+  delete process.env.POLLINATIONS_API_KEY;
+  delete process.env.POLLINATIONS_CHAT_MODEL;
+  delete process.env.POLLINATIONS_BASE_URL;
+  delete process.env.POLLINATIONS_TIMEOUT_MS;
   // AI Tutor override vars (host .env may carry real values — keep tests hermetic)
   delete process.env.AI_TUTOR_PROVIDER;
   delete process.env.AI_TUTOR_API_KEY;
@@ -300,6 +304,86 @@ describe('FINAL Groq AI Tutor provider (stub HTTP, no live calls)', () => {
     try {
       await expect(getLlmProvider().chat({ system: 'sys', user: 'hello' })).rejects.toThrow(/LLM provider error: 401/);
       expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe('FINAL Pollinations AI Tutor provider (live-verified, stub HTTP)', () => {
+  test('AI_TUTOR_PROVIDER=pollinations calls the Pollinations endpoint with key', async () => {
+    const { getLlmProvider } = await import('../src/ai/llm');
+    process.env.AI_TUTOR_PROVIDER = 'pollinations';
+    process.env.POLLINATIONS_API_KEY = 'test-pollinations-key';
+    process.env.POLLINATIONS_CHAT_MODEL = 'openai';
+    const seen: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = [];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation((async (url: unknown, init: unknown) => {
+      const headers = ((init as { headers?: Record<string, string> }).headers ?? {}) as Record<string, string>;
+      seen.push({ url: String(url), headers, body: JSON.parse(String((init as { body?: string }).body ?? '{}')) });
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'stubbed pollinations answer' } }] }),
+        text: async () => '',
+      };
+    }) as typeof fetch);
+    try {
+      const provider = getLlmProvider();
+      expect(provider.name).toBe('pollinations');
+      const out = await provider.chat({ system: 'sys', user: 'hello' });
+      expect(out).toBe('stubbed pollinations answer');
+      expect(seen).toHaveLength(1);
+      expect(seen[0].url).toBe('https://text.pollinations.ai/openai/chat/completions');
+      expect(seen[0].headers.authorization).toBe('Bearer test-pollinations-key');
+      expect((seen[0].body as { model?: string }).model).toBe('openai');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test('pollinations works without a key (endpoint answers keyless, never mocks)', async () => {
+    const { getLlmProvider } = await import('../src/ai/llm');
+    process.env.AI_TUTOR_PROVIDER = 'pollinations';
+    delete process.env.POLLINATIONS_API_KEY;
+    const seen: { url: string; headers: Record<string, string> }[] = [];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation((async (url: unknown, init: unknown) => {
+      const headers = ((init as { headers?: Record<string, string> }).headers ?? {}) as Record<string, string>;
+      seen.push({ url: String(url), headers });
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'keyless answer' } }] }),
+        text: async () => '',
+      };
+    }) as typeof fetch);
+    try {
+      const out = await getLlmProvider().chat({ system: 'sys', user: 'hello' });
+      expect(out).toBe('keyless answer');
+      expect(seen).toHaveLength(1);
+      expect(seen[0].headers.authorization).toBeUndefined();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test('pollinations 500 retries once then resolves (transient recovery)', async () => {
+    const { getLlmProvider } = await import('../src/ai/llm');
+    process.env.AI_TUTOR_PROVIDER = 'pollinations';
+    process.env.POLLINATIONS_API_KEY = 'test-key';
+    let calls = 0;
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation((async () => {
+      calls += 1;
+      if (calls === 1) {
+        return { ok: false, status: 500, text: async () => 'busy' } as unknown as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'recovered' } }] }),
+        text: async () => '',
+      };
+    }) as unknown as typeof fetch);
+    try {
+      const out = await getLlmProvider().chat({ system: 'sys', user: 'hello' });
+      expect(out).toBe('recovered');
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     } finally {
       fetchSpy.mockRestore();
     }

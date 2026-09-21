@@ -34,7 +34,7 @@ const envSchema = z.object({
   CERT_STORAGE_DIR: z.string().default(''),
   AI_SERVICE_URL: z.string().default(''),
   AI_SERVICE_TOKEN: z.string().default(''),
-  AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(5000).max(120000).default(55000),
+  AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(5000).max(120000).default(100000),
   LLM_PROVIDER: z.string().default('anthropic'),
   LLM_API_KEY: z.string().default(''),
   LLM_BASE_URL: z.string().default(''),

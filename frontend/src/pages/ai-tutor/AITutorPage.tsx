@@ -110,9 +110,9 @@ export const AITutorPage = () => {
     clearSendTimers();
     // 0–8s "Thinking", then "Waking AI Tutor…" until settle.
     phaseTimer.current = setTimeout(() => setWakingPhase(true), 8000);
-    // Stuck-transport net (client timeout 140s + margin): swap dots for a
+    // Stuck-transport net (client timeout 220s + margin): swap dots for a
     // retry warning instead of an endless typing indicator.
-    stuckTimer.current = setTimeout(() => setSendStuck(true), 150000);
+    stuckTimer.current = setTimeout(() => setSendStuck(true), 230000);
     setPendingUserMessage(text);
     setMessage('');
     sendMessage(

@@ -89,12 +89,20 @@ services:
         value: 12
       - key: COOKIE_SECURE
         value: 'true'
-      # AI providers: Groq is the primary AI Tutor chat route (fast,
-      # reliable, OpenAI-compatible). Gemini keeps embeddings
-      # (gemini-embedding-001 @ VECTOR(1536)); OpenRouter/Mistral/Gemini
+      # AI providers: Pollinations is the primary AI Tutor chat route
+      # (live-verified working, OpenAI-compatible). Gemini keeps embeddings
+      # (gemini-embedding-001 @ VECTOR(1536)); Groq/OpenRouter/Mistral/Gemini
       # chat compat paths stay available. All keys server-side only.
       - key: AI_TUTOR_PROVIDER
-        value: groq
+        value: pollinations
+      - key: POLLINATIONS_API_KEY
+        sync: false
+      - key: POLLINATIONS_CHAT_MODEL
+        value: openai
+      - key: POLLINATIONS_BASE_URL
+        value: https://text.pollinations.ai/openai
+      - key: POLLINATIONS_TIMEOUT_S
+        value: 60
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_CHAT_MODEL
@@ -172,7 +180,15 @@ services:
           type: web
           envVarKey: AI_SERVICE_TOKEN
       - key: AI_TUTOR_PROVIDER
-        value: groq
+        value: pollinations
+      - key: POLLINATIONS_API_KEY
+        sync: false
+      - key: POLLINATIONS_CHAT_MODEL
+        value: openai
+      - key: POLLINATIONS_BASE_URL
+        value: https://text.pollinations.ai/openai
+      - key: POLLINATIONS_TIMEOUT_S
+        value: 60
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_CHAT_MODEL

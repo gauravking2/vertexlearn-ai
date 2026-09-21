@@ -26,13 +26,14 @@ export function isAiServiceConfigured(): boolean {
 
 export function aiServiceTimeoutMs(): number {
   // Total budget for ONE backend→AI-service call. Cold starts on Render Free
-  // can take 30-60s; 55s stays under typical gateway limits while allowing
-  // one legitimate wake. Never unbounded; retries are handled by the caller.
+  // can take 30-60s, and the Pollinations chat route answers in ~15-25s, so
+  // the budget must cover retrieval + one genuine provider call with margin.
+  // 100s stays under typical gateway limits while ending the "Waking AI
+  // Tutor" hang permanently (failing calls now settle as errors instead of
+  // hanging past the 140s client timeout). Never unbounded; retries are
+  // handled by the caller.
   // Canonical source is AppConfig (AI_SERVICE_TIMEOUT_MS); direct env read is
   // the fallback for unit-test contexts where config is not loaded.
-  // Groq answers in seconds, so when the AI Tutor chat route is Groq-backed
-  // the window can stay tight — but the AI service still performs retrieval
-  // first, so keep the same bounded budget rather than a second knob.
   let raw = Number(process.env.AI_SERVICE_TIMEOUT_MS ?? NaN);
   if (!Number.isFinite(raw) || raw <= 0) {
     try {
@@ -41,7 +42,7 @@ export function aiServiceTimeoutMs(): number {
       raw = NaN;
     }
   }
-  if (!Number.isFinite(raw) || raw <= 0) return 55000;
+  if (!Number.isFinite(raw) || raw <= 0) return 100000;
   return Math.min(Math.max(Math.floor(raw), 5000), 120000);
 }
 
