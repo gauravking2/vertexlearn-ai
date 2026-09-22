@@ -16,7 +16,8 @@
     "verify:compose": "tsx src/scripts/verify-compose.ts",
     "load:test": "node scripts/load-test.js",
     "seed": "tsx src/scripts/seed.ts",
-    "seed:demo": "tsx src/scripts/seed-demo.ts"
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
+    "seed:demo:prod": "node dist/scripts/seed-demo.js"
   },
   "engines": {
     "node": ">=20"
