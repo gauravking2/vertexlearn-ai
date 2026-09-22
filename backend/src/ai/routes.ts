@@ -104,15 +104,16 @@ function aiProviderError(err: unknown): ApiError {
 }
 
 aiRouter.get('/ai/warmup', authenticate, async (_req, res) => {
-  // Lightweight pre-warm: opening the AI Tutor page fires this in the
-  // background so a sleeping free-tier AI service boots BEFORE the user
-  // sends a message. Bounded 20s, never blocks page render, never exposes
-  // the AI service or its token (server-to-server only).
+  // Pre-warm WITHOUT blocking the chat path: opening the Tutor page fires
+  // this in the background (bounded 60s) so a sleeping free-tier AI service
+  // boots BEFORE the user sends a message. The chat request itself is a
+  // single attempt (no double-wait); the UI retry lands on a warm service.
+  // Never exposes the AI service or its token (server-to-server only).
   if (!isAiServiceConfigured()) {
     res.json({ warm: false, reason: 'AI service is not configured' });
     return;
   }
-  const warm = await pingAiService(20000);
+  const warm = await pingAiService(60000);
   res.json({ warm });
 });
 

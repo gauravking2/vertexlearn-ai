@@ -93,21 +93,12 @@ export async function callAiServiceChatWithColdRetry(input: {
   mode: string;
   topK?: number;
 }): Promise<AiServiceChatResponse | null> {
-  try {
-    return await callAiServiceChatInner(input);
-  } catch (err) {
-    // ONE bounded recovery attempt: the first call often wakes a sleeping
-    // free-tier service; a short ping lets it boot, then exactly one retry.
-    // A provider 4xx (bad key/model) or a provider timeout is NOT a cold
-    // start — retrying those only doubles a 2-minute hang, so rethrow them
-    // immediately instead of burning a second full budget.
-    if (!isColdStartError(err)) throw err;
-    const message = err instanceof Error ? err.message : String(err);
-    if (/AI service error: 4|AI_TIMEOUT|AI_NOT_CONFIGURED|AI_BAD_REQUEST/i.test(message)) throw err;
-    const warm = await pingAiService(20000);
-    void warm;
-    return await callAiServiceChatInner(input);
-  }
+  // Render Free spins the AI service down after ~15min idle. The FIRST call
+  // after that always pays a 30-60s cold boot INSIDE the single request, so
+  // retrying it only doubles a 2-minute hang. One attempt with the full
+  // budget; the 503/timeout errors below already tell the UI to retry once
+  // the service is warm.
+  return callAiServiceChatInner(input);
 }
 
 export async function callAiServiceChat(

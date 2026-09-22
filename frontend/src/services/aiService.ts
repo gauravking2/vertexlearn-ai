@@ -14,8 +14,10 @@ import {
 
 export const aiService = {
   // Pre-warm the AI service when the Tutor page opens (bounded, background).
+  // 60s budget: a cold free-tier instance needs 30-60s to boot, and the
+  // warmup runs while the user reads the page — never blocking send.
   async warmup(): Promise<{ warm: boolean }> {
-    const response = await api.get<{ warm: boolean }>('/ai/warmup', { timeout: 25000 });
+    const response = await api.get<{ warm: boolean }>('/ai/warmup', { timeout: 65000 });
     return response.data;
   },
 
