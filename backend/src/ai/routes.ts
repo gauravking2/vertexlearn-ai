@@ -8,6 +8,7 @@ import { requireCourseOwner } from '../courses/ownership';
 import { getLectureCourse, isEnrolled } from '../learning/guards';
 import { touchStreak } from '../learning/progress';
 import { callAiServiceChat, callAiServiceGenerate, isAiServiceConfigured, pingAiService } from './client';
+import { logger } from '../logger';
 import { getEmbeddingProvider, parseEmbedding, serializeEmbedding } from './embeddings';
 import {
   buildGroundedSystemPrompt,
@@ -192,52 +193,51 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
     const localAllowedRefs = new Set(localSources.map((_, i) => `[S${i + 1}]`));
     let answer: string;
     let grounded: boolean;
-    // Single answer path: the AI service owns course-scoped RAG. The
-    // backend never answers locally here — if the remote call fails the
-    // request MUST surface an error (never an empty answer row that the
-    // frontend renders as silence), and if it is unconfigured the request
-    // MUST fail closed instead of silently returning nothing. In tests the
-    // AI service is unset, so the local mock LLM path stays available.
+    // Answer path: prefer the AI service (course-scoped RAG over pgvector).
+    // Fallback: when the remote call fails OR returns an empty answer (e.g.
+    // the AI service has no DB rows / provider key on its side), answer
+    // locally from the backend's own retrieval + chat provider instead of
+    // 503ing a question the course material can actually answer. In tests
+    // the AI service is unset, so the local path stays available.
     if (isAiServiceConfigured()) {
-      let sources: { id: string; lectureId: string | null; lectureTitle: string; chunkIndex: number; text: string; score: number }[];
       try {
         const remote = await callAiServiceChat({ courseId: session.course_id, question: body.content, mode: session.mode, topK });
-        if (!remote || typeof remote.answer !== 'string' || !remote.answer.trim()) {
-          next(new ApiError(503, 'PROVIDER_UNAVAILABLE', 'AI Tutor is temporarily unavailable. Please try again.'));
+        if (remote && typeof remote.answer === 'string' && remote.answer.trim()) {
+          const remoteRefs = new Set((remote.sources ?? []).map((s) => s.ref));
+          answer = stripForeignCitations(remote.answer, new Set([...localAllowedRefs, ...remoteRefs]));
+          grounded = remote.grounded;
+          const remoteSources = (remote.sources ?? []).map((s) => ({
+            id: `${s.ref}`,
+            lectureId: s.lectureId,
+            lectureTitle: s.lectureTitle,
+            chunkIndex: s.chunkIndex,
+            text: '',
+            score: s.score,
+          }));
+          const remoteSourceRows = remoteSources.map((s, i) => ({
+            ref: `S${i + 1}`,
+            lectureId: s.lectureId,
+            lectureTitle: s.lectureTitle,
+            chunkIndex: s.chunkIndex,
+            score: Number(s.score ?? 0),
+          }));
+          const remoteAssistantId = newId();
+          await db.query(`INSERT INTO ai_chat_messages (id, session_id, role, content, sources) VALUES ($1, $2, 'assistant', $3, $4)`, [
+            remoteAssistantId,
+            session.id,
+            answer,
+            JSON.stringify(remoteSourceRows),
+          ]);
+          await touchStreak(req.user!.id);
+          res.status(201).json({ userMessageId, assistantMessageId: remoteAssistantId, answer, grounded, mode: session.mode, sources: remoteSourceRows });
           return;
         }
-        const remoteRefs = new Set((remote.sources ?? []).map((s) => s.ref));
-        answer = stripForeignCitations(remote.answer, new Set([...localAllowedRefs, ...remoteRefs]));
-        grounded = remote.grounded;
-        sources = (remote.sources ?? []).map((s) => ({
-          id: `${s.ref}`,
-          lectureId: s.lectureId,
-          lectureTitle: s.lectureTitle,
-          chunkIndex: s.chunkIndex,
-          text: '',
-          score: s.score,
-        }));
+        logger.warn({ courseId: session.course_id }, 'AI service empty answer — falling back to local RAG path');
       } catch (err) {
-        next(aiProviderError(err));
-        return;
+        // Fail over to the local RAG path below for transport/provider
+        // errors; only fail closed when the local path cannot answer either.
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'AI service call failed — falling back to local RAG path');
       }
-      const sourceRows = sources.map((s, i) => ({
-        ref: `S${i + 1}`,
-        lectureId: s.lectureId,
-        lectureTitle: s.lectureTitle,
-        chunkIndex: s.chunkIndex,
-        score: Number(s.score ?? 0),
-      }));
-      const assistantId = newId();
-      await db.query(`INSERT INTO ai_chat_messages (id, session_id, role, content, sources) VALUES ($1, $2, 'assistant', $3, $4)`, [
-        assistantId,
-        session.id,
-        answer,
-        JSON.stringify(sourceRows),
-      ]);
-      await touchStreak(req.user!.id);
-      res.status(201).json({ userMessageId, assistantMessageId: assistantId, answer, grounded, mode: session.mode, sources: sourceRows });
-      return;
     }
     if (!hasRetrievalSupport(localSources)) {
       answer = noContextAnswer();
