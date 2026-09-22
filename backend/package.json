@@ -17,7 +17,9 @@
     "load:test": "node scripts/load-test.js",
     "seed": "tsx src/scripts/seed.ts",
     "seed:demo": "tsx src/scripts/seed-demo.ts",
-    "seed:demo:prod": "node dist/scripts/seed-demo.js"
+    "seed:demo:prod": "node dist/scripts/seed-demo.js",
+    "ai:reembed": "tsx src/scripts/reembed-chunks.ts",
+    "ai:reembed:prod": "node dist/scripts/reembed-chunks.js"
   },
   "engines": {
     "node": ">=20"

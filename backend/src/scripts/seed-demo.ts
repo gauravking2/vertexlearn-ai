@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
+import { getEmbeddingDim, getEmbeddingProvider, serializeEmbedding, validateEmbeddingDim } from '../ai/embeddings';
 import { db, newId } from '../db/pool';
 import { hashPassword } from '../auth/password';
 import { logger } from '../logger';
@@ -285,11 +286,31 @@ async function ensureQuiz(courseId: string, instructorId: string, spec: DemoCour
 async function ensureTranscriptChunks(courseId: string, lectureIds: string[], spec: DemoCourseSpec): Promise<number> {
   const existing = await db.query(`SELECT COUNT(*)::int AS count FROM document_chunks WHERE course_id = $1`, [courseId]);
   if (((existing.rows[0] as { count: number }).count ?? 0) > 0) return 0;
+  // Embed the chunks while seeding. Inserting embedding = NULL (the previous
+  // behavior) left every seeded course ungrounded: retrieval still matched
+  // rows, but `embedding <=> query` scored 0.0 for all of them, so the Tutor
+  // answered "I could not find this in the course material." to every question.
+  const provider = getEmbeddingProvider();
+  const expectedDim = getEmbeddingDim();
   let inserted = 0;
   for (let i = 0; i < lectureIds.length; i += 1) {
+    const text = spec.chunks[i % spec.chunks.length];
+    let embedding: string | null = null;
+    try {
+      const [vector] = await provider.embed([text]);
+      validateEmbeddingDim(vector, expectedDim);
+      embedding = serializeEmbedding(vector);
+    } catch (err) {
+      // Never fail the seed over embeddings; log and fall back to NULL so
+      // `npm run ai:reembed` can repair the rows once a key is configured.
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err), lectureId: lectureIds[i] },
+        'seed: chunk embedding failed — inserting NULL (run ai:reembed later)',
+      );
+    }
     await db.query(
-      `INSERT INTO document_chunks (id, course_id, lecture_id, chunk_index, chunk_text, embedding) VALUES ($1, $2, $3, 0, $4, NULL)`,
-      [randomUUID(), courseId, lectureIds[i], spec.chunks[i % spec.chunks.length]],
+      `INSERT INTO document_chunks (id, course_id, lecture_id, chunk_index, chunk_text, embedding) VALUES ($1, $2, $3, 0, $4, $5)`,
+      [randomUUID(), courseId, lectureIds[i], text, embedding],
     );
     inserted += 1;
   }
