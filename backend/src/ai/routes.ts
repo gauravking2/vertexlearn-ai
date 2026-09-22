@@ -826,6 +826,14 @@ aiRouter.get('/recommendations/me', authenticate, async (req, res, next) => {
 aiRouter.get('/courses/:id/ai-status', authenticate, authorize('instructor', 'admin'), requireCourseOwner, async (req, res, next) => {
   try {
     const chunks = await db.query(`SELECT COUNT(*)::int AS count FROM document_chunks WHERE course_id = $1`, [req.params.id]);
+    // Rows whose embedding is NULL/malformed score 0.0 in retrieval, which
+    // reads as "this course material covers nothing". Surface the count so the
+    // gap is visible before it becomes a support ticket; repair with
+    // `npm run ai:reembed`.
+    const unembedded = await db.query(
+      `SELECT COUNT(*)::int AS count FROM document_chunks WHERE course_id = $1 AND (embedding IS NULL OR embedding::text IN ('', '[]'))`,
+      [req.params.id],
+    );
     const drafts = await db.query(`SELECT status, COUNT(*)::int AS count FROM ai_quiz_drafts WHERE course_id = $1 GROUP BY status`, [req.params.id]);
     const provider = getEmbeddingProvider();
     void parseEmbedding;
@@ -838,6 +846,7 @@ aiRouter.get('/courses/:id/ai-status', authenticate, authorize('instructor', 'ad
     res.json({
       courseId: req.params.id,
       chunks: (chunks.rows[0] as { count: number }).count,
+      chunksMissingEmbeddings: (unembedded.rows[0] as { count: number }).count,
       drafts: drafts.rows,
       embeddingDim: provider.dim,
       aiServiceConfigured: isAiServiceConfigured(),

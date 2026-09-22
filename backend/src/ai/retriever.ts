@@ -1,4 +1,5 @@
 import { db, isPgMem, newId } from '../db/pool';
+import { logger } from '../logger';
 import { chunkTranscript } from './chunking';
 import { cosineSimilarity, getEmbeddingDim, getEmbeddingProvider, parseEmbedding, serializeEmbedding, validateEmbeddingDim } from './embeddings';
 
@@ -66,7 +67,7 @@ export async function retrieveCourseChunks(courseId: string, query: string, topK
      WHERE dc.course_id = $1 ORDER BY dc.embedding <=> '${literal}'::vector LIMIT ${limit}`,
     [courseId],
   );
-  return (rows.rows as { id: string; lecture_id: string | null; chunk_index: number; chunk_text: string; lecture_title: string | null; score: number }[]).map(
+  const scored = (rows.rows as { id: string; lecture_id: string | null; chunk_index: number; chunk_text: string; lecture_title: string | null; score: number }[]).map(
     (r) => ({
       id: r.id,
       lectureId: r.lecture_id,
@@ -76,6 +77,16 @@ export async function retrieveCourseChunks(courseId: string, query: string, topK
       score: Number(r.score ?? 0),
     }),
   );
+  // A course with rows but no usable vectors scores exactly 0.0 everywhere
+  // (pgvector returns NULL for a NULL embedding). That state makes the Tutor
+  // refuse every question while still citing sources, so say so loudly.
+  if (scored.length && scored.every((s) => s.score === 0)) {
+    logger.warn(
+      { courseId, chunks: scored.length },
+      'retrieval scored 0.0 for every chunk — document_chunks embeddings are missing; run `npm run ai:reembed`',
+    );
+  }
+  return scored;
 }
 
 export function hasRetrievalSupport(texts: RetrievedChunk[], threshold = 0.12): boolean {
