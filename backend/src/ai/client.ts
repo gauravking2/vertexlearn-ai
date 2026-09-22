@@ -67,7 +67,11 @@ export async function pingAiService(timeoutMs = 15000): Promise<boolean> {
   const base = aiServiceBaseUrl();
   if (!base) return false;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.min(Math.max(timeoutMs, 1000), 30000));
+  // Cap matches the 60s warmup budget: a cold free-tier AI service needs
+  // 30-60s to boot, and capping at 30s made warmup report warm:false even
+  // when the service was waking normally (then chat paid the whole cold
+  // boot inside its own budget and timed out).
+  const timer = setTimeout(() => controller.abort(), Math.min(Math.max(timeoutMs, 1000), 60000));
   try {
     const res = await fetch(`${base.replace(/\/$/, '')}/health`, {
       method: 'GET',

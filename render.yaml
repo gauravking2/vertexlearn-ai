@@ -115,8 +115,10 @@ services:
         value: gemini-3.6-flash
       - key: GEMINI_API_KEY
         sync: false
-      - key: AI_TUTOR_PROVIDER
-        value: openrouter
+      # Single AI_TUTOR_PROVIDER key (YAML duplicate keys = last-wins: a
+      # second entry silently overrode pollinations with openrouter and the
+      # hosted Tutor ran on a dead OpenRouter key). Chat fallback credentials
+      # stay below WITHOUT a second provider key.
       - key: AI_TUTOR_MODEL
         value: openrouter/free
       - key: AI_TUTOR_BASE_URL
@@ -201,8 +203,8 @@ services:
         value: gemini-3.6-flash
       - key: GEMINI_API_KEY
         sync: false
-      - key: AI_TUTOR_PROVIDER
-        value: openrouter
+      # Same single-provider rule as the backend (see above): no second
+      # AI_TUTOR_PROVIDER key; OpenRouter rows stay as fallback credentials.
       - key: AI_TUTOR_MODEL
         value: openrouter/free
       - key: AI_TUTOR_BASE_URL

@@ -37,10 +37,9 @@ export const aiService = {
     content: string,
     topK?: number
   ): Promise<ChatMessage> {
-    // Bounded client timeout aligned with the backend budget (100s per
-    // attempt + one cold-retry ≈ up to ~210s worst case on a cold free-tier
-    // instance; warm answers land in ~20-40s). 220s client abort guarantees
-    // EVERY request settles; the page safety net shows the
+    // Bounded client timeout aligned with the backend budget (single 100s
+    // backend attempt, no retry; warm answers land in ~10-40s). 220s client
+    // abort guarantees EVERY request settles; the page safety net shows the
     // "waking" state well before this fires.
     const response = await api.post<ChatMessage>(
       `/ai/chat/sessions/${sessionId}/messages`,
