@@ -18,37 +18,48 @@ export function resetDb(): void {
   pgMemDb = undefined;
 }
 
+function buildPool(): Pool {
+  const databaseUrl = process.env.DATABASE_URL ?? '';
+  if (!databaseUrl) throw new Error('DATABASE_URL is not configured');
+  // TLS policy per host (Railway/Supabase fix + local plain-TCP fix).
+  //
+  // Root cause (Railway logs 2026-09-21): pg v9 parses `?sslmode=require`
+  // out of the connection string and upgrades to TLS ITSELF, treating
+  // `require` as full chain verification — our explicit
+  // `ssl: { rejectUnauthorized: false }` never won, so Supabase's chain
+  // failed with SELF_SIGNED_CERT_IN_CHAIN and every query 500'd.
+  //
+  // Fix: strip the sslmode param from the URL pg sees, and decide TLS
+  // ourselves by host:
+  // - Managed Postgres (Supabase pooler, *.supabase.co, or any URL that
+  //   carried an sslmode=require/prefer/verify-*/allow param): TLS ON with
+  //   chain verification skipped (traffic stays encrypted), unless
+  //   PGSSL_STRICT=1 restores full verification.
+  // - Plain-TCP Compose/localhost (loopback or in-stack hostname like
+  //   `postgres` with NO sslmode param): pass NO ssl option so pg never
+  //   attempts STARTTLS ("server does not support SSL" otherwise).
+  const strict = process.env.PGSSL_STRICT === '1';
+  const sslParam = /[?&]sslmode=([^&]*)/.exec(databaseUrl.toLowerCase())?.[1] ?? '';
+  const tlsParam = sslParam !== '' && sslParam !== 'disable';
+  const stripped = databaseUrl.replace(/([?&])sslmode=[^&]*&?/i, '$1').replace(/[?&]$/, '');
+  let host = '';
+  try {
+    host = new URL(databaseUrl).hostname.toLowerCase();
+  } catch {
+    host = '';
+  }
+  const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  const inStackHost = host === 'postgres' || host === 'redis' || host === 'minio';
+  const useTls = strict || tlsParam || (!loopback && !inStackHost);
+  return new PgPool({
+    connectionString: stripped,
+    ...(useTls ? { ssl: { rejectUnauthorized: strict } } : {}),
+  });
+}
+
 function getPool(): Pool {
   if (pgMemDb) return pgMemDb.getPool() as unknown as Pool;
-  if (!pool) {
-    const databaseUrl = process.env.DATABASE_URL ?? '';
-    if (!databaseUrl) throw new Error('DATABASE_URL is not configured');
-    // TLS policy per host (Railway fix + local regression fix):
-    // - Managed Postgres (Supabase pooler, *.supabase.co, or any URL carrying
-    //   an sslmode=require/prefer/verify-*/allow param): keep TLS on. The
-    //   chain may be untrusted (SELF_SIGNED_CERT_IN_CHAIN), so skip chain
-    //   verification unless PGSSL_STRICT=1 restores full verification.
-    // - Plain-TCP Compose/localhost (loopback or in-stack hostname like
-    //   `postgres` with NO sslmode param): pass NO ssl option so pg never
-    //   attempts STARTTLS ("server does not support SSL" otherwise).
-    const strict = process.env.PGSSL_STRICT === '1';
-    const low = databaseUrl.toLowerCase();
-    const sslParam = /[?&]sslmode=([^&]*)/.exec(low)?.[1] ?? '';
-    const tlsParam = sslParam !== '' && sslParam !== 'disable';
-    let host = '';
-    try {
-      host = new URL(databaseUrl).hostname.toLowerCase();
-    } catch {
-      host = '';
-    }
-    const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-    const inStackHost = host === 'postgres' || host === 'redis' || host === 'minio';
-    const useTls = strict || tlsParam || (!loopback && !inStackHost);
-    pool = new PgPool({
-      connectionString: databaseUrl,
-      ...(useTls ? { ssl: { rejectUnauthorized: strict } } : {}),
-    });
-  }
+  if (!pool) pool = buildPool();
   return pool;
 }
 

@@ -39,6 +39,9 @@ async function checkPostgres(): Promise<Pool | undefined> {
   const low = url.toLowerCase();
   const sslParam = /[?&]sslmode=([^&]*)/.exec(low)?.[1] ?? '';
   const tlsParam = sslParam !== '' && sslParam !== 'disable';
+  // Strip sslmode so pg v9 cannot self-upgrade to full verification; the
+  // explicit ssl object below is the single source of truth.
+  const stripped = url.replace(/([?&])sslmode=[^&]*&?/i, '$1').replace(/[?&]$/, '');
   let host = '';
   try {
     host = new URL(url).hostname.toLowerCase();
@@ -48,7 +51,7 @@ async function checkPostgres(): Promise<Pool | undefined> {
   const plainTcp =
     !strict && !tlsParam && (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === 'postgres' || host === 'redis' || host === 'minio');
   const pool = new Pool({
-    connectionString: url,
+    connectionString: stripped,
     ...(plainTcp ? {} : { ssl: { rejectUnauthorized: strict } }),
     connectionTimeoutMillis: 5000,
   });
