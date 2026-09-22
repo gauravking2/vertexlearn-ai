@@ -35,12 +35,25 @@ const envSchema = z.object({
   AI_SERVICE_URL: z.string().default(''),
   AI_SERVICE_TOKEN: z.string().default(''),
   AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(5000).max(120000).default(100000),
+  // Budget for ONE backend→AI-service chat request (the warmup ping uses its
+  // own 60s cap). A warm hop answers in ~1-3s; anything slower is treated as
+  // unhealthy so the local grounded path answers instead of hanging the user.
+  AI_SERVICE_CHAT_TIMEOUT_MS: z.coerce.number().int().min(2000).max(30000).default(12000),
+  // Same idea for the generation routes (summarize, quiz drafts, flashcards,
+  // study plan) — they have local fallbacks, so they fail fast too.
+  AI_SERVICE_GENERATE_TIMEOUT_MS: z.coerce.number().int().min(3000).max(60000).default(25000),
+  // How long the hop stays parked after a failure (circuit breaker).
+  AI_SERVICE_BREAKER_MS: z.coerce.number().int().min(5000).max(900000).default(120000),
   LLM_PROVIDER: z.string().default('anthropic'),
   LLM_API_KEY: z.string().default(''),
   LLM_BASE_URL: z.string().default(''),
   LLM_CHAT_MODEL: z.string().default('claude-3-5-sonnet-latest'),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
+  // AI Tutor answer budget: one attempt per provider in the chain, bounded
+  // per attempt and in total, so every request settles quickly.
+  LLM_ATTEMPT_TIMEOUT_MS: z.coerce.number().int().min(2000).max(60000).default(22000),
+  AI_ANSWER_BUDGET_MS: z.coerce.number().int().min(5000).max(120000).default(48000),
   GEMINI_API_KEY: z.string().default(''),
   EMBEDDING_MODEL: z.string().default(''),
   EMBEDDING_API_KEY: z.string().default(''),

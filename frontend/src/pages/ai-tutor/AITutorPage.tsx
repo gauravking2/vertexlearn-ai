@@ -110,9 +110,10 @@ export const AITutorPage = () => {
     clearSendTimers();
     // 0–8s "Thinking", then "Waking AI Tutor…" until settle.
     phaseTimer.current = setTimeout(() => setWakingPhase(true), 8000);
-    // Stuck-transport net (client timeout 220s + margin): swap dots for a
-    // retry warning instead of an endless typing indicator.
-    stuckTimer.current = setTimeout(() => setSendStuck(true), 230000);
+    // Stuck-transport net: the server budget is 12s (AI-service hop) + 48s
+    // (local provider chain) and the client aborts at 75s, so by 55s the user
+    // gets a retry affordance instead of an endless typing indicator.
+    stuckTimer.current = setTimeout(() => setSendStuck(true), 55000);
     setPendingUserMessage(text);
     setMessage('');
     sendMessage(
@@ -347,7 +348,7 @@ export const AITutorPage = () => {
                       <span className="w-2 h-2 bg-[#7C3AED] rounded-full vl-dot" />
                     </div>
                     <p className="text-xs text-[#5C635D] dark:text-[#b9beb4]">
-                      {wakingPhase ? 'Waking AI Tutor… this can take up to a minute on first use.' : 'Thinking…'}
+                      {wakingPhase ? 'Waking AI Tutor… first answer after idle can take up to a minute.' : 'Thinking…'}
                     </p>
                   </div>
                 </div>

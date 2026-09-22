@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from typing import Protocol
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 class ChunkStore(Protocol):
@@ -37,21 +38,77 @@ class PostgresChunkStore:
         self.database_url = database_url
 
     def _connect(self):
+        import os
+
         import psycopg2
 
-        # Supabase pooler (and most managed Postgres) presents a certificate
-        # chain the container CA bundle may not trust (self-signed in chain).
-        # psycopg2 honors sslmode=require for TLS but still verifies; wrap the
-        # context so the chain is accepted instead of crashing retrieval.
-        import ssl
+        # Hard bounds on the database hop. Without them an unreachable or
+        # wedged Postgres blocks the request until the OS TCP timeout, which
+        # from the caller's side looks like an answered-nothing hang (the
+        # backend used to wait its whole budget on it).
+        try:
+            connect_timeout = int(os.getenv("AI_DB_CONNECT_TIMEOUT_S", "10"))
+        except ValueError:
+            connect_timeout = 10
+        try:
+            statement_timeout_ms = int(os.getenv("AI_DB_STATEMENT_TIMEOUT_MS", "8000"))
+        except ValueError:
+            statement_timeout_ms = 8000
 
-        url = self.database_url
-        if "sslmode=disable" in url:
-            return psycopg2.connect(url)
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return psycopg2.connect(url, sslmode="require", sslcontext=ctx)
+        # libpq parameters ONLY, built from parsed URL parts.
+        #
+        # Root cause fixed here: psycopg2's connect() stringifies every keyword
+        # into a DSN and validates it against libpq keywords, so the previous
+        # `sslcontext=<SSLContext>` argument raised
+        #   psycopg2.ProgrammingError: invalid dsn: invalid connection option "sslcontext"
+        # on EVERY call — retrieval never returned a row, so the backend always
+        # fell back to its own path. Passing the raw URL is just as fragile:
+        # psycopg2 validates the URL's query parameters too, and managed hosts
+        # (Supabase pooler) append non-libpq ones such as `pgbouncer=true`.
+        params: dict[str, object] = {
+            "connect_timeout": connect_timeout,
+            "options": f"-c statement_timeout={statement_timeout_ms}",
+        }
+        raw = (self.database_url or "").strip()
+        parsed = urlparse(raw)
+        host = ""
+        has_ssl = False
+        if parsed.scheme in ("postgres", "postgresql") and parsed.hostname:
+            host = parsed.hostname
+            params["host"] = host
+            if parsed.port:
+                params["port"] = parsed.port
+            if parsed.username:
+                params["user"] = unquote(parsed.username)
+            if parsed.password:
+                params["password"] = unquote(parsed.password)
+            if parsed.path and parsed.path != "/":
+                params["dbname"] = parsed.path.lstrip("/")
+            sslmode = parse_qs(parsed.query).get("sslmode", [""])[0].strip().lower()
+            if sslmode:
+                params["sslmode"] = sslmode
+                has_ssl = True
+        else:
+            # Keyword-style DSN (host=... dbname=...): merge it with our libpq
+            # parameters instead of re-parsing a URL.
+            merged: dict[str, object] = dict(psycopg2.extensions.parse_dsn(raw)) if raw else {}
+            merged.update(params)
+            params = merged
+            host = str(params.get("host", ""))
+            has_ssl = bool(str(params.get("sslmode", "")).strip())
+
+        override = (os.getenv("AI_DB_SSL_MODE") or "").strip().lower()
+        if override:
+            params["sslmode"] = override
+        elif not has_ssl and host:
+            # Managed Postgres: keep traffic encrypted. libpq verifies the chain
+            # only when a CA bundle is actually present, which is the right
+            # default for Supabase/Neon; set AI_DB_SSL_MODE to override (e.g.
+            # verify-full, or disable). Localhost/in-stack stay plain TCP so
+            # "server does not support SSL" can never break local dev.
+            if host.lower() not in ("localhost", "127.0.0.1", "::1", "postgres", "db", "host.docker.internal"):
+                params["sslmode"] = "require"
+        return psycopg2.connect(**params)
 
     def chunks_for_course(self, course_id: str) -> list[dict]:
         conn = self._connect()

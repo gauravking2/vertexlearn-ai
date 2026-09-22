@@ -7,13 +7,24 @@ import { validateBody } from '../middleware/validate';
 import { requireCourseOwner } from '../courses/ownership';
 import { getLectureCourse, isEnrolled } from '../learning/guards';
 import { touchStreak } from '../learning/progress';
-import { callAiServiceChat, callAiServiceGenerate, isAiServiceConfigured, pingAiService } from './client';
+import {
+  aiServiceDiagnostics,
+  aiServiceHost,
+  callAiServiceChat,
+  callAiServiceGenerate,
+  isAiServiceBreakerOpen,
+  isAiServiceConfigured,
+  pingAiService,
+} from './client';
 import { logger } from '../logger';
 import { getEmbeddingProvider, parseEmbedding, serializeEmbedding } from './embeddings';
 import {
   buildGroundedSystemPrompt,
   buildGroundedUserPrompt,
+  chatWithFallback,
   getLlmProvider,
+  getLlmProviderName,
+  getProviderChain,
   stripForeignCitations,
   type ExplanationMode,
 } from './llm';
@@ -64,6 +75,25 @@ async function requireCourseAccessOr404(courseId: string, user: { id: string; ro
 
 function noContextAnswer(): string {
   return 'I could not find this in the course material. The retrieved lectures do not cover your question, so I will not guess. Try rephrasing, or check whether the topic is covered in a different lecture.';
+}
+
+/**
+ * Deterministic last-resort answer used ONLY when retrieval already found
+ * supporting course material but every configured chat provider failed
+ * (rate-limited, no key, or the provider network is unreachable from this
+ * host). It quotes the retrieved passages with their citations, so the answer
+ * stays grounded and course-scoped and the Tutor never dies mid-question.
+ */
+function buildExtractiveAnswer(citations: { ref: string; lectureTitle: string; text: string }[]): string {
+  const passages = citations.slice(0, 3).map((c) => {
+    const text = c.text.replace(/\s+/g, ' ').trim().slice(0, 320);
+    return `[${c.ref}] (${c.lectureTitle}) ${text}`;
+  });
+  return [
+    'The AI provider is temporarily unavailable, so here are the most relevant passages from this course material:',
+    '',
+    ...passages,
+  ].join('\n');
 }
 
 /**
@@ -200,7 +230,9 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
     // locally from the backend's own retrieval + chat provider instead of
     // 503ing a question the course material can actually answer. In tests
     // the AI service is unset, so the local path stays available.
-    if (isAiServiceConfigured()) {
+    let answerPath = 'local-rag';
+    if (isAiServiceConfigured() && !isAiServiceBreakerOpen()) {
+      const remoteStarted = Date.now();
       try {
         const remote = await callAiServiceChat({ courseId: session.course_id, question: body.content, mode: session.mode, topK });
         if (remote && typeof remote.answer === 'string' && remote.answer.trim()) {
@@ -230,31 +262,69 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
             JSON.stringify(remoteSourceRows),
           ]);
           await touchStreak(req.user!.id);
-          res.status(201).json({ userMessageId, assistantMessageId: remoteAssistantId, answer, grounded, mode: session.mode, sources: remoteSourceRows });
+          logger.info({ courseId: session.course_id, path: 'ai-service', latencyMs: Date.now() - remoteStarted }, 'AI Tutor answered via ai-service');
+          res.status(201).json({
+            userMessageId,
+            assistantMessageId: remoteAssistantId,
+            answer,
+            grounded,
+            mode: session.mode,
+            sources: remoteSourceRows,
+            provider: 'ai-service',
+          });
           return;
         }
-        logger.warn({ courseId: session.course_id }, 'AI service empty answer — falling back to local RAG path');
+        logger.warn({ courseId: session.course_id, latencyMs: Date.now() - remoteStarted }, 'AI service empty answer — falling back to local RAG path');
       } catch (err) {
         // Fail over to the local RAG path below for transport/provider
         // errors; only fail closed when the local path cannot answer either.
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'AI service call failed — falling back to local RAG path');
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err), latencyMs: Date.now() - remoteStarted },
+          'AI service call failed — falling back to local RAG path',
+        );
       }
+    } else if (isAiServiceConfigured()) {
+      logger.info({ courseId: session.course_id }, 'AI service circuit breaker open — answering from local RAG path');
     }
     if (!hasRetrievalSupport(localSources)) {
       answer = noContextAnswer();
       grounded = false;
     } else {
       const citations = toCitations(localSources);
-      const llm = getLlmProvider();
+      const localStarted = Date.now();
       let raw: string;
       try {
-        raw = await llm.chat({
+        const result = await chatWithFallback({
           system: buildGroundedSystemPrompt(session.mode),
           user: buildGroundedUserPrompt(body.content, citations),
         });
+        raw = result.answer;
+        answerPath = `local-rag:${result.provider}`;
+        logger.info(
+          { courseId: session.course_id, provider: result.provider, attempts: result.attempts, latencyMs: Date.now() - localStarted },
+          'AI Tutor answered via local RAG path',
+        );
       } catch (err) {
-        next(aiProviderError(err));
-        return;
+        const mapped = aiProviderError(err);
+        if (mapped.code === 'AI_NOT_CONFIGURED') {
+          // A genuine misconfiguration (missing/invalid provider key) must stay
+          // visible instead of being masked by a fallback answer.
+          next(mapped);
+          return;
+        }
+        // Transient failure (timeout / rate limit / provider outage): answer
+        // extractively from the retrieved course material rather than 5xx-ing
+        // a question the course content demonstrably covers.
+        logger.warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            attempts: (err as { attempts?: unknown }).attempts,
+            latencyMs: Date.now() - localStarted,
+          },
+          'all AI providers failed — answering extractively from course material',
+        );
+        raw = buildExtractiveAnswer(citations);
+        answerPath = 'local-extractive';
       }
       answer = stripForeignCitations(raw, localAllowedRefs);
       grounded = true;
@@ -274,7 +344,15 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
       JSON.stringify(sourceRows),
     ]);
     await touchStreak(req.user!.id);
-    res.status(201).json({ userMessageId, assistantMessageId: assistantId, answer, grounded, mode: session.mode, sources: sourceRows });
+    res.status(201).json({
+      userMessageId,
+      assistantMessageId: assistantId,
+      answer,
+      grounded,
+      mode: session.mode,
+      sources: sourceRows,
+      provider: answerPath,
+    });
   } catch (err) {
     next(err);
   }
@@ -340,13 +418,18 @@ aiRouter.post('/ai/lectures/:id/summarize', authenticate, async (req, res, next)
       next(notFound('No transcript indexed for this lecture'));
       return;
     }
-    if (isAiServiceConfigured()) {
-      const remote = await callAiServiceGenerate<{ summary: { keyPoints: string[]; takeaways: string[] } }>(`/v1/summarize`, {
-        lecture_id: req.params.id,
-        transcript: transcript.slice(0, 20000),
-      });
-      res.json({ lectureId: req.params.id, summary: remote.summary, provider: 'ai-service' });
-      return;
+    if (isAiServiceConfigured() && !isAiServiceBreakerOpen()) {
+      try {
+        const remote = await callAiServiceGenerate<{ summary: { keyPoints: string[]; takeaways: string[] } }>(`/v1/summarize`, {
+          lecture_id: req.params.id,
+          transcript: transcript.slice(0, 20000),
+        });
+        res.json({ lectureId: req.params.id, summary: remote.summary, provider: 'ai-service' });
+        return;
+      } catch (err) {
+        // Fall through to the local summarizer instead of failing the request.
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'ai-service summarize failed — using local LLM');
+      }
     }
     const llm = getLlmProvider();
     const answer = await llm.chat({
@@ -388,15 +471,22 @@ aiRouter.post(
         return;
       }
       const body = req.body as { count: number };
-      let questions: { type: string; prompt: string; points: number; options?: { text: string; isCorrect: boolean }[] }[];
-      if (isAiServiceConfigured()) {
-        const remote = await callAiServiceGenerate<{ questions: typeof questions }>(`/v1/quiz-gen`, {
-          lecture_id: req.params.id,
-          transcript: transcript.slice(0, 20000),
-          count: body.count,
-        });
-        questions = remote.questions;
-      } else {
+      const questionList: { type: string; prompt: string; points: number; options?: { text: string; isCorrect: boolean }[] }[] = [];
+      let questions: typeof questionList | null = null;
+      if (isAiServiceConfigured() && !isAiServiceBreakerOpen()) {
+        try {
+          const remote = await callAiServiceGenerate<{ questions: typeof questionList }>(`/v1/quiz-gen`, {
+            lecture_id: req.params.id,
+            transcript: transcript.slice(0, 20000),
+            count: body.count,
+          });
+          questions = Array.isArray(remote.questions) && remote.questions.length ? remote.questions : null;
+        } catch (err) {
+          // Fall through to the deterministic local generator.
+          logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'ai-service quiz generation failed — using local generator');
+        }
+      }
+      if (!questions) {
         const crypto = await import('node:crypto');
         const chunks = await retrieveCourseChunks(ref.courseId, transcript.slice(0, 2000), Math.min(body.count, 10));
         const palette = chunks.length ? chunks : [{ text: transcript.slice(0, 800) }];
@@ -583,11 +673,20 @@ aiRouter.post('/ai/modules/:id/flashcards', authenticate, async (req, res, next)
     }
     const lectureRes = await db.query(`SELECT id FROM lectures WHERE module_id = $1 ORDER BY sort_order LIMIT 5`, [mod.id]);
     const lectureIds = (lectureRes.rows as { id: string }[]).map((r) => r.id);
-    let cards: { front: string; back: string }[];
-    if (isAiServiceConfigured()) {
-      const remote = await callAiServiceGenerate<{ flashcards: typeof cards }>(`/v1/flashcards`, { module_id: mod.id, lecture_ids: lectureIds });
-      cards = remote.flashcards;
-    } else if (lectureIds.length) {
+    let cards: { front: string; back: string }[] | null = null;
+    if (isAiServiceConfigured() && !isAiServiceBreakerOpen()) {
+      try {
+        const remote = await callAiServiceGenerate<{ flashcards: { front: string; back: string }[] }>(`/v1/flashcards`, {
+          module_id: mod.id,
+          lecture_ids: lectureIds,
+        });
+        cards = Array.isArray(remote.flashcards) && remote.flashcards.length ? remote.flashcards : null;
+      } catch (err) {
+        // Fall through to the local card builder.
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'ai-service flashcards failed — using local builder');
+      }
+    }
+    if (!cards && lectureIds.length) {
       const placeholders = lectureIds.map((id) => `lecture ${id}`);
       void placeholders;
       const chunkRows = await db.query(`SELECT chunk_text, lecture_id FROM document_chunks WHERE course_id = $1 LIMIT 10`, [mod.course_id]);
@@ -599,7 +698,7 @@ aiRouter.post('/ai/modules/:id/flashcards', authenticate, async (req, res, next)
       if (!cards.length) {
         cards = [{ front: `What is the main idea of module ${mod.id}?`, back: 'Review the indexed lecture transcripts for this module.' }];
       }
-    } else {
+    } else if (!cards) {
       cards = [{ front: `What is the main idea of module ${mod.id}?`, back: 'Add lectures and transcripts first.' }];
     }
     const created: Record<string, unknown>[] = [];
@@ -654,15 +753,21 @@ aiRouter.post('/ai/study-plan', authenticate, authorize('student', 'admin'), val
         if (totals.max > 0 && totals.earned / totals.max < 0.7 && weakTopics.length < 5) weakTopics.push(title);
       }
     }
-    let plan: Record<string, unknown>;
-    if (isAiServiceConfigured()) {
-      plan = await callAiServiceGenerate<Record<string, unknown>>(`/v1/study-plan`, {
-        course_id: body.courseId,
-        quiz_ratio: ratio,
-        weak_topics: weakTopics,
-        mastery: mastery.level,
-      });
-    } else {
+    let plan: Record<string, unknown> | null = null;
+    if (isAiServiceConfigured() && !isAiServiceBreakerOpen()) {
+      try {
+        plan = await callAiServiceGenerate<Record<string, unknown>>(`/v1/study-plan`, {
+          course_id: body.courseId,
+          quiz_ratio: ratio,
+          weak_topics: weakTopics,
+          mastery: mastery.level,
+        });
+      } catch (err) {
+        // Fall through to the local plan builder.
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'ai-service study plan failed — using local builder');
+      }
+    }
+    if (!plan) {
       const focus = weakTopics.length ? weakTopics : ['core concepts'];
       plan = {
         courseId: body.courseId,
@@ -725,12 +830,22 @@ aiRouter.get('/courses/:id/ai-status', authenticate, authorize('instructor', 'ad
     const provider = getEmbeddingProvider();
     void parseEmbedding;
     void serializeEmbedding;
+    // Live, bounded probe of the backend→AI-service hop (8s max). When this is
+    // false the Tutor is answering from the local grounded path, which is
+    // exactly the signal that was missing during the hosted "Waking AI
+    // Tutor…" debugging. Names/hosts only — never a token or key.
+    const aiServiceReachable = isAiServiceConfigured() ? await pingAiService(8000) : false;
     res.json({
       courseId: req.params.id,
       chunks: (chunks.rows[0] as { count: number }).count,
       drafts: drafts.rows,
       embeddingDim: provider.dim,
       aiServiceConfigured: isAiServiceConfigured(),
+      aiServiceHost: aiServiceHost(),
+      aiServiceReachable,
+      aiService: aiServiceDiagnostics(),
+      chatProvider: getLlmProviderName(),
+      chatProviderChain: getProviderChain().map((p) => p.name),
       masteryHint: masteryLevelFromRatio(null),
     });
   } catch (err) {

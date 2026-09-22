@@ -14,10 +14,11 @@ import {
 
 export const aiService = {
   // Pre-warm the AI service when the Tutor page opens (bounded, background).
-  // 60s budget: a cold free-tier instance needs 30-60s to boot, and the
-  // warmup runs while the user reads the page — never blocking send.
+  // 45s budget: a cold free-tier instance needs 30-60s to boot, and this runs
+  // while the user reads the page — never blocking send. If the hop is broken
+  // the backend records the failure and later messages skip it entirely.
   async warmup(): Promise<{ warm: boolean }> {
-    const response = await api.get<{ warm: boolean }>('/ai/warmup', { timeout: 65000 });
+    const response = await api.get<{ warm: boolean }>('/ai/warmup', { timeout: 45000 });
     return response.data;
   },
 
@@ -37,14 +38,15 @@ export const aiService = {
     content: string,
     topK?: number
   ): Promise<ChatMessage> {
-    // Bounded client timeout aligned with the backend budget (single 100s
-    // backend attempt, no retry; warm answers land in ~10-40s). 220s client
-    // abort guarantees EVERY request settles; the page safety net shows the
-    // "waking" state well before this fires.
+    // Bounded client timeout aligned with the server budget: one short
+    // AI-service attempt (12s) plus the bounded local provider chain (48s),
+    // so a real answer lands well inside 75s and every request settles.
+    // 220s previously meant a broken hop left the user on "Waking AI Tutor…"
+    // for over three minutes before anything appeared.
     const response = await api.post<ChatMessage>(
       `/ai/chat/sessions/${sessionId}/messages`,
       { content, topK },
-      { timeout: 220000 }
+      { timeout: 75000 }
     );
     return response.data;
   },

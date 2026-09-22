@@ -69,9 +69,33 @@ services:
           name: vertexlearn-redis
           property: connectionString
       # Backend -> AI service (server-to-service; token below authenticates).
-      # Actual deployed Render hostname (see dashboard); update if the AI service is renamed.
+      # MUST be the ai-service's public https URL and MUST be reachable FROM
+      # this service. Verified failure mode: when it is stale/unreachable the
+      # backend cannot answer through the AI service at all, so the Tutor falls
+      # back to the local grounded path (correct, but slower). Confirm it with
+      # GET /api/v1/ai/warmup ({"warm":true}) or
+      # GET /api/v1/courses/<id>/ai-status as an instructor (aiServiceReachable).
       - key: AI_SERVICE_URL
         value: https://vertexlearn-ai-service-0pts.onrender.com
+      # Short budget + breaker: a slow hop is skipped instead of hanging the
+      # user's message, and the local grounded path answers immediately.
+      - key: AI_SERVICE_CHAT_TIMEOUT_MS
+        value: '12000'
+      # Generation routes (summarize, quiz drafts, flashcards, study plan) have
+      # local fallbacks, so they fail fast too.
+      - key: AI_SERVICE_GENERATE_TIMEOUT_MS
+        value: '25000'
+      - key: AI_SERVICE_BREAKER_MS
+        value: '120000'
+      # AI Tutor answer budget: one bounded attempt per provider in the chain
+      # (primary + any other provider with a credential), then the extractive
+      # course-material answer. No retries => no double-wait.
+      - key: LLM_ATTEMPT_TIMEOUT_MS
+        value: '22000'
+      - key: AI_ANSWER_BUDGET_MS
+        value: '48000'
+      - key: LLM_MAX_RETRIES
+        value: '0'
       # Internal secret: Render generates ONCE here; the ai-service reads the
       # same value via fromService envVarKey (server-side only).
       - key: AI_SERVICE_TOKEN
@@ -113,6 +137,8 @@ services:
         value: gemini
       - key: LLM_CHAT_MODEL
         value: gemini-3.6-flash
+      # Second credential so the Tutor chain can fall back when the primary
+      # provider is slow or rate-limited from this host.
       - key: GEMINI_API_KEY
         sync: false
       # Single AI_TUTOR_PROVIDER key (YAML duplicate keys = last-wins: a
@@ -221,6 +247,10 @@ services:
         value: 800
       - key: RAG_CHUNK_OVERLAP
         value: 200
+      # No retry multiplier: a hanging provider must not be paid for twice
+      # inside one user-visible request.
+      - key: LLM_MAX_RETRIES
+        value: '0'
 
   # Render-compatible Redis / Key Value. Backend treats REDIS_URL as optional
   # (in-memory fallback), so this service is recommended but not fatal if removed.

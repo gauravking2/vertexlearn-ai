@@ -6,6 +6,11 @@ export interface ChatCompletionInput {
   system: string;
   user: string;
   maxTokens?: number;
+  // Per-call overrides used by the bounded fallback chain (chatWithFallback).
+  // Without them a hanging provider can consume the request budget twice
+  // (one attempt + one retry) before the UI hears anything.
+  timeoutMs?: number;
+  maxRetries?: number;
 }
 
 export interface LlmProvider {
@@ -107,8 +112,8 @@ class AnthropicHttpProvider implements LlmProvider {
     // Blank base URL counts as unset (live-verification regression fix:
     // `LLM_BASE_URL=` produced the relative URL `/v1/messages`).
     const baseUrl = (process.env.LLM_BASE_URL?.trim() || 'https://api.anthropic.com').replace(/\/$/, '');
-    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
-    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    const timeoutMs = input.timeoutMs ?? Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = input.maxRetries ?? Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -183,8 +188,8 @@ class MistralHttpProvider implements LlmProvider {
     // Blank LLM_BASE_URL must NOT leak into the Mistral path (it is an
     // Anthropic-oriented variable); Mistral's API base is fixed.
     const baseUrl = (process.env.AI_TUTOR_BASE_URL?.trim() || 'https://api.mistral.ai').replace(/\/$/, '');
-    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
-    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    const timeoutMs = input.timeoutMs ?? Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = input.maxRetries ?? Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -256,8 +261,8 @@ class OpenRouterHttpProvider implements LlmProvider {
     }
     const model = getOpenRouterChatModel();
     const baseUrl = getOpenRouterBaseUrl().replace(/\/$/, '');
-    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
-    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    const timeoutMs = input.timeoutMs ?? Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = input.maxRetries ?? Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -331,8 +336,8 @@ class GroqHttpProvider implements LlmProvider {
     }
     const model = getGroqChatModel();
     const baseUrl = (process.env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai').replace(/\/$/, '');
-    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
-    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    const timeoutMs = input.timeoutMs ?? Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = input.maxRetries ?? Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -403,8 +408,12 @@ class PollinationsHttpProvider implements LlmProvider {
     const apiKey = getPollinationsApiKey();
     const model = getPollinationsChatModel();
     const baseUrl = getPollinationsBaseUrl().replace(/\/$/, '');
-    const timeoutMs = Number(process.env.POLLINATIONS_TIMEOUT_MS ?? 60000);
-    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    // Accept both spellings: the ai-service uses POLLINATIONS_TIMEOUT_S
+    // (seconds) while this backend reads POLLINATIONS_TIMEOUT_MS. Before this
+    // the backend silently ignored a configured _S value.
+    const configuredTimeout = Number(process.env.POLLINATIONS_TIMEOUT_MS ?? 0) || Number(process.env.POLLINATIONS_TIMEOUT_S ?? 0) * 1000;
+    const timeoutMs = input.timeoutMs ?? (configuredTimeout > 0 ? configuredTimeout : 60000);
+    const maxRetries = input.maxRetries ?? Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
@@ -459,9 +468,7 @@ class PollinationsHttpProvider implements LlmProvider {
   }
 }
 
-export function getLlmProvider(): LlmProvider {
-  if (overrideLlm) return overrideLlm;
-  const name = getLlmProviderName();
+function providerForName(name: string): LlmProvider {
   if (name === 'mock') return new MockLlmProvider();
   if (name === 'pollinations') return new PollinationsHttpProvider();
   if (name === 'gemini') return new GeminiHttpProvider();
@@ -469,6 +476,124 @@ export function getLlmProvider(): LlmProvider {
   if (name === 'openrouter') return new OpenRouterHttpProvider();
   if (name === 'mistral') return new MistralHttpProvider();
   return new AnthropicHttpProvider();
+}
+
+export function getLlmProvider(): LlmProvider {
+  if (overrideLlm) return overrideLlm;
+  return providerForName(getLlmProviderName());
+}
+
+/**
+ * Providers tried after the configured primary when it fails. Only providers
+ * that can actually authenticate are included: an unkeyed provider would
+ * silently return mock text, which is worse than an honest failure. The one
+ * exception is Pollinations, which answers real questions without a key.
+ */
+const FALLBACK_PROVIDER_ORDER = ['gemini', 'groq', 'pollinations', 'openrouter', 'mistral', 'anthropic'] as const;
+
+function providerHasCredential(name: string): boolean {
+  if (name === 'pollinations') return true; // keyless route is live-verified
+  if (name === 'gemini') return Boolean(getGeminiApiKey());
+  if (name === 'groq') return Boolean(getGroqApiKey());
+  if (name === 'openrouter') return Boolean(process.env.AI_TUTOR_API_KEY?.trim() || '');
+  if (name === 'mistral') return Boolean(getMistralApiKey());
+  if (name === 'anthropic') return Boolean(process.env.LLM_API_KEY?.trim() || '');
+  return false;
+}
+
+/**
+ * Ordered provider chain used by the AI Tutor answer path: the configured
+ * primary first, then every other provider that has a credential. A single
+ * hanging or rate-limited provider therefore degrades to the next one instead
+ * of burning the whole request budget.
+ */
+export function getProviderChain(): LlmProvider[] {
+  if (overrideLlm) return [overrideLlm];
+  const primary = getLlmProviderName();
+  if (primary === 'mock') return [new MockLlmProvider()];
+  const names = [primary, ...FALLBACK_PROVIDER_ORDER.filter((n) => n !== primary)];
+  const chain: LlmProvider[] = [];
+  for (const name of names) {
+    if (!providerHasCredential(name)) continue;
+    chain.push(providerForName(name));
+  }
+  return chain.length ? chain : [getLlmProvider()];
+}
+
+/** Per-provider attempt budget (never more than the remaining answer budget). */
+export function llmAttemptTimeoutMs(): number {
+  const raw = Number(process.env.LLM_ATTEMPT_TIMEOUT_MS ?? NaN);
+  if (!Number.isFinite(raw) || raw <= 0) return 22000;
+  return Math.min(Math.max(Math.floor(raw), 2000), 60000);
+}
+
+/** Total wall-clock budget for the whole local answer attempt chain. */
+export function llmAnswerBudgetMs(): number {
+  const raw = Number(process.env.AI_ANSWER_BUDGET_MS ?? NaN);
+  if (!Number.isFinite(raw) || raw <= 0) return 48000;
+  return Math.min(Math.max(Math.floor(raw), 5000), 120000);
+}
+
+function categorizeLlmError(err: unknown): 'timeout' | 'rate_limit' | 'unavailable' {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/timed out|timeout|abort/i.test(message)) return 'timeout';
+  if (/rate.?limit|LLM provider error: 429/i.test(message)) return 'rate_limit';
+  return 'unavailable';
+}
+
+export interface LlmFallbackResult {
+  answer: string;
+  provider: string;
+  attempts: { provider: string; category: string }[];
+}
+
+/**
+ * Answer with the first provider in the chain that succeeds, bounded by
+ * LLM_ATTEMPT_TIMEOUT_MS per provider and AI_ANSWER_BUDGET_MS overall. Every
+ * attempt runs with maxRetries=0 so a hanging provider cannot double-wait.
+ * Throws only when the whole chain is exhausted; a real provider status error
+ * is preferred over a bare timeout so the API can report RATE_LIMITED /
+ * AI_NOT_CONFIGURED instead of a blanket timeout.
+ */
+export async function chatWithFallback(input: ChatCompletionInput): Promise<LlmFallbackResult> {
+  if (overrideLlm) {
+    return { answer: await overrideLlm.chat(input), provider: overrideLlm.name, attempts: [] };
+  }
+  const chain = getProviderChain();
+  const deadline = Date.now() + llmAnswerBudgetMs();
+  const attemptTimeoutMs = llmAttemptTimeoutMs();
+  const attempts: { provider: string; category: string }[] = [];
+  const errors: { provider: string; category: string; error: unknown }[] = [];
+  for (const provider of chain) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      attempts.push({ provider: provider.name, category: 'budget_exhausted' });
+      break;
+    }
+    try {
+      const answer = await provider.chat({
+        ...input,
+        timeoutMs: Math.min(attemptTimeoutMs, remaining),
+        maxRetries: 0,
+      });
+      if (answer && answer.trim()) {
+        return { answer, provider: provider.name, attempts };
+      }
+      attempts.push({ provider: provider.name, category: 'empty' });
+    } catch (err) {
+      const category = categorizeLlmError(err);
+      attempts.push({ provider: provider.name, category });
+      errors.push({ provider: provider.name, category, error: err });
+    }
+  }
+  const informative = errors.find((e) => e.category !== 'timeout') ?? errors[0];
+  const failure = (informative?.error instanceof Error ? informative.error : new Error('All AI providers failed')) as Error & {
+    attempts?: unknown;
+    provider?: string;
+  };
+  failure.attempts = attempts;
+  failure.provider = informative?.provider;
+  throw failure;
 }
 
 /**
@@ -485,8 +610,8 @@ class GeminiHttpProvider implements LlmProvider {
       return new MockLlmProvider().chat(input);
     }
     const model = getGeminiChatModel();
-    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 30000);
-    const maxRetries = Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
+    const timeoutMs = input.timeoutMs ?? Number(process.env.LLM_TIMEOUT_MS ?? 30000);
+    const maxRetries = input.maxRetries ?? Math.min(Math.max(Number(process.env.LLM_MAX_RETRIES ?? 1), 0), 5);
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
