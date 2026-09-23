@@ -735,5 +735,11 @@ export function stripForeignCitations(answer: string, allowedRefs: Set<string>):
  */
 export function looksLikePlaceholderAnswer(answer: unknown): boolean {
   if (typeof answer !== 'string') return false;
-  return /^\s*(mock|placeholder|dummy)\b/i.test(answer) || /^\s*\[?mock answer/i.test(answer);
+  if (/^\s*(mock|placeholder|dummy)\b/i.test(answer) || /^\s*\[?mock answer/i.test(answer)) return true;
+  // Degenerate moderation output. Observed on a live host: a free model router
+  // picked a content-safety classifier and returned exactly "User Safety:
+  // safe", which the Tutor then stored as a grounded, cited answer. A student
+  // never receives that.
+  if (/^\s*(user|content|model)?\s*safety\s*[:=]/i.test(answer)) return true;
+  return /^\s*(safe|ok|n\/?a|none|no answer)\s*[.!]?\s*$/i.test(answer);
 }

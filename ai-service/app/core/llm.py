@@ -35,7 +35,14 @@ def looks_like_placeholder(answer: object) -> bool:
     """
     if not isinstance(answer, str):
         return False
-    return bool(re.match(r"^\s*(mock|placeholder|dummy)\b", answer, re.IGNORECASE))
+    if re.match(r"^\s*(mock|placeholder|dummy)\b", answer, re.IGNORECASE):
+        return True
+    # Degenerate moderation output. Observed live: a free model router selected
+    # a content-safety classifier and returned exactly "User Safety: safe",
+    # which the Tutor then stored as a grounded, cited answer.
+    if re.match(r"^\s*(user|content|model)?\s*safety\s*[:=]", answer, re.IGNORECASE):
+        return True
+    return bool(re.match(r"^\s*(safe|ok|n/?a|none|no answer)\s*[.!]?\s*$", answer, re.IGNORECASE))
 
 
 def _attempt_timeout(settings, timeout_s: float | None) -> float:

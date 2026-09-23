@@ -28,6 +28,7 @@ from app.core.llm import (  # noqa: E402
     ProviderNotConfigured,
     ai_answer_budget_s,
     chat_with_fallback,
+    looks_like_placeholder,
     get_llm_clients,
     llm_attempt_timeout_s,
     set_llm_client,
@@ -154,6 +155,23 @@ def test_chain_never_returns_placeholder_text(monkeypatch):
 
     assert provider == "pollinations"
     assert "Mock answer" not in answer
+
+
+def test_chain_rejects_degenerate_moderation_output(monkeypatch):
+    """A free router picked a content-safety classifier and answered exactly
+    "User Safety: safe"; it must be treated as a failed attempt, not an answer."""
+    safety = _Stub("gemini", answer="User Safety: safe")
+    real = _Stub("pollinations", answer="Usability testing watches five users [S1].")
+    monkeypatch.setattr(llm_module, "get_llm_clients", lambda: [safety, real])
+
+    answer, provider = chat_with_fallback("sys", "user")
+
+    assert provider == "pollinations"
+    assert answer == "Usability testing watches five users [S1]."
+    assert looks_like_placeholder("User Safety: safe") is True
+    assert looks_like_placeholder("safe") is True
+    # A legitimate grounded refusal is a real answer, never a placeholder.
+    assert looks_like_placeholder("I could not find this in the course material.") is False
 
 
 def test_chain_reports_missing_credential_as_configuration_error(monkeypatch):

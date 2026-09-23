@@ -5,7 +5,7 @@ import {
   noteAiServiceFailure,
   noteAiServiceSuccess,
 } from '../src/ai/client';
-import { chatWithFallback, getProviderChain } from '../src/ai/llm';
+import { chatWithFallback, getProviderChain, looksLikePlaceholderAnswer } from '../src/ai/llm';
 
 /**
  * The hosted AI Tutor used to hang for minutes because ONE provider (and the
@@ -111,6 +111,18 @@ describe('AI Tutor provider fallback chain', () => {
     }) as unknown as typeof global.fetch;
     await expect(chatWithFallback({ system: 's', user: 'u' })).rejects.toThrow();
     noteAiServiceSuccess();
+  });
+
+  test('degenerate moderation output is refused, real refusals are not', () => {
+    // Seen live from a free model router: a content-safety classifier answered
+    // "User Safety: safe", which was stored as a grounded, cited answer.
+    expect(looksLikePlaceholderAnswer('User Safety: safe')).toBe(true);
+    expect(looksLikePlaceholderAnswer('content safety: blocked')).toBe(true);
+    expect(looksLikePlaceholderAnswer('safe')).toBe(true);
+    expect(looksLikePlaceholderAnswer('Mock answer: what is X?')).toBe(true);
+    // Legitimate answers must never be treated as placeholders.
+    expect(looksLikePlaceholderAnswer('I could not find this in the course material.')).toBe(false);
+    expect(looksLikePlaceholderAnswer('Usability testing watches five real users [S1].')).toBe(false);
   });
 
   test('AI-service snake_case citations are normalized (never a bare ref)', () => {
