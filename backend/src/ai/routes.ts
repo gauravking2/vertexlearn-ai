@@ -250,14 +250,23 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
           const remoteRefs = new Set((remote.sources ?? []).map((s) => s.ref));
           answer = stripForeignCitations(remote.answer, new Set([...localAllowedRefs, ...remoteRefs]));
           grounded = remote.grounded;
-          const remoteSources = (remote.sources ?? []).map((s) => ({
-            id: `${s.ref}`,
-            lectureId: s.lectureId,
-            lectureTitle: s.lectureTitle,
-            chunkIndex: s.chunkIndex,
-            text: '',
-            score: s.score,
-          }));
+          // A citation must name its source. The AI service reports its own
+          // retrieval, but if any of its fields are missing (older payload
+          // shape, or a source the backend also retrieved) fill them from the
+          // local retrieval of the SAME course so the student never sees a
+          // bare `[S1]` with no lecture attached.
+          const localByRef = new Map(localSources.map((s, i) => [`S${i + 1}`, s]));
+          const remoteSources = (remote.sources ?? []).map((s) => {
+            const fallback = localByRef.get(s.ref);
+            return {
+              id: `${s.ref}`,
+              lectureId: s.lectureId ?? fallback?.lectureId ?? null,
+              lectureTitle: s.lectureTitle || fallback?.lectureTitle || 'Course material',
+              chunkIndex: Number.isFinite(s.chunkIndex) ? s.chunkIndex : fallback?.chunkIndex ?? 0,
+              text: '',
+              score: s.score,
+            };
+          });
           const remoteSourceRows = remoteSources.map((s, i) => ({
             ref: `S${i + 1}`,
             lectureId: s.lectureId,

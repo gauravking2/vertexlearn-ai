@@ -119,6 +119,61 @@ describe('AI tutor + RAG', () => {
     }
   });
 
+  test('AI-service answers keep their lecture citations when stored', async () => {
+    const s = await setupCourseWithTranscript('remote1', 'Zeta particles decay into theta mesons under low pressure.');
+    const prevUrl = process.env.AI_SERVICE_URL;
+    const prevToken = process.env.AI_SERVICE_TOKEN;
+    const realFetch = global.fetch;
+    process.env.AI_SERVICE_URL = 'http://127.0.0.1:59998';
+    process.env.AI_SERVICE_TOKEN = 'test-token';
+    // The live AI service (FastAPI/pydantic) serializes citations in
+    // snake_case; the backend used to cast that payload and lose every
+    // lecture name, storing citations as `{ref, score}` only.
+    global.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          answer: 'Zeta particles decay into theta mesons under low pressure [S1].',
+          grounded: true,
+          mode: 'beginner',
+          sources: [
+            { ref: 'S1', lecture_id: s.lectureId, lecture_title: `Lecture remote1`, chunk_index: 0, score: 0.91 },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof global.fetch;
+    try {
+      const session = await request(app)
+        .post('/api/v1/ai/chat/sessions')
+        .set('Authorization', `Bearer ${s.studentToken}`)
+        .send({ courseId: s.courseId });
+      const msg = await request(app)
+        .post(`/api/v1/ai/chat/sessions/${session.body.id}/messages`)
+        .set('Authorization', `Bearer ${s.studentToken}`)
+        .send({ content: 'What do zeta particles decay into?' });
+      expect(msg.status).toBe(201);
+      expect(msg.body.provider).toBe('ai-service');
+      expect(msg.body.grounded).toBe(true);
+      expect(msg.body.sources[0]).toMatchObject({
+        ref: 'S1',
+        lectureId: s.lectureId,
+        lectureTitle: 'Lecture remote1',
+        chunkIndex: 0,
+      });
+      const { db } = await import('../src/db/pool');
+      const stored = await db.query(`SELECT sources FROM ai_chat_messages WHERE session_id = $1 AND role = 'assistant'`, [session.body.id]);
+      const rows = stored.rows as { sources: string | { ref: string; lectureTitle?: string; lectureId?: string }[] }[];
+      const persisted = typeof rows[0].sources === 'string' ? JSON.parse(rows[0].sources) : rows[0].sources;
+      expect(persisted[0].lectureTitle).toBe('Lecture remote1');
+      expect(persisted[0].lectureId).toBe(s.lectureId);
+    } finally {
+      global.fetch = realFetch;
+      if (prevUrl === undefined) delete process.env.AI_SERVICE_URL;
+      else process.env.AI_SERVICE_URL = prevUrl;
+      if (prevToken === undefined) delete process.env.AI_SERVICE_TOKEN;
+      else process.env.AI_SERVICE_TOKEN = prevToken;
+    }
+  });
+
   test('course isolation: Course A chat cannot retrieve Course B chunks', async () => {
     const a = await setupCourseWithTranscript('isoA', 'Alpha course teaches photosynthesis and chloroplasts in depth.');
     const b = await setupCourseWithTranscript('isoB', 'Beta course teaches quantum tunneling in semiconductors.');

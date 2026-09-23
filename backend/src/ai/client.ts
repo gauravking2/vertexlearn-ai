@@ -181,6 +181,44 @@ export interface AiServiceChatResponse {
   mode: string;
 }
 
+/**
+ * Normalize the AI service's chat payload into the backend's shape.
+ *
+ * The AI service (FastAPI/pydantic) answers with snake_case (`lecture_id`,
+ * `lecture_title`, `chunk_index`, `top_k`), while this client consumes
+ * camelCase. Casting the JSON straight to the interface type-checked fine but
+ * left every remote citation without a lecture name in the host's database —
+ * sources stored as `{ref, score}` only, so a student saw `[S1]` attached to
+ * nothing. Accept both spellings and never emit an undefined field.
+ */
+export function normalizeAiServiceChatResponse(raw: unknown): AiServiceChatResponse | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const body = raw as Record<string, unknown>;
+  if (typeof body.answer !== 'string') return null;
+  const rawSources = Array.isArray(body.sources) ? (body.sources as Record<string, unknown>[]) : [];
+  const sources = rawSources.map((s, i) => {
+    const pick = (...keys: string[]): unknown => {
+      for (const k of keys) if (s[k] !== undefined && s[k] !== null) return s[k];
+      return undefined;
+    };
+    const rawIndex = pick('chunkIndex', 'chunk_index');
+    const rawScore = pick('score');
+    return {
+      ref: typeof s.ref === 'string' && s.ref ? s.ref : `S${i + 1}`,
+      lectureId: (pick('lectureId', 'lecture_id') as string | null | undefined) ?? null,
+      lectureTitle: (pick('lectureTitle', 'lecture_title') as string | undefined) ?? '',
+      chunkIndex: Number.isFinite(Number(rawIndex)) ? Number(rawIndex) : 0,
+      score: Number.isFinite(Number(rawScore)) ? Number(rawScore) : 0,
+    };
+  });
+  return {
+    answer: body.answer,
+    grounded: body.grounded === true,
+    sources,
+    mode: typeof body.mode === 'string' ? body.mode : '',
+  };
+}
+
 export async function pingAiService(timeoutMs = 15000): Promise<boolean> {
   const base = aiServiceBaseUrl();
   if (!base) return false;
@@ -288,7 +326,11 @@ async function callAiServiceChatInner(input: {
     }
     throw new Error(`AI service error: ${res.status}${code ? ` ${code}` : ''}`);
   }
-  return (await res.json()) as AiServiceChatResponse;
+  const parsed = normalizeAiServiceChatResponse(await res.json());
+  // An unparseable body is an unusable answer: report it as a failed attempt
+  // so the caller falls through to the local grounded path.
+  if (!parsed) throw new Error('AI service returned an unusable chat payload');
+  return parsed;
 }
 
 export async function callAiServiceGenerate<T>(path: string, body: Record<string, unknown>): Promise<T> {

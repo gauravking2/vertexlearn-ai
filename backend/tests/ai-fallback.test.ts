@@ -1,4 +1,10 @@
-import { aiServiceChatTimeoutMs, aiServiceGenerateTimeoutMs, noteAiServiceFailure, noteAiServiceSuccess } from '../src/ai/client';
+import {
+  aiServiceChatTimeoutMs,
+  aiServiceGenerateTimeoutMs,
+  normalizeAiServiceChatResponse,
+  noteAiServiceFailure,
+  noteAiServiceSuccess,
+} from '../src/ai/client';
 import { chatWithFallback, getProviderChain } from '../src/ai/llm';
 
 /**
@@ -105,6 +111,31 @@ describe('AI Tutor provider fallback chain', () => {
     }) as unknown as typeof global.fetch;
     await expect(chatWithFallback({ system: 's', user: 'u' })).rejects.toThrow();
     noteAiServiceSuccess();
+  });
+
+  test('AI-service snake_case citations are normalized (never a bare ref)', () => {
+    // Live-host payload shape: FastAPI/pydantic answers in snake_case, and
+    // casting it to the camelCase interface silently dropped every lecture
+    // name from the stored citation.
+    const parsed = normalizeAiServiceChatResponse({
+      answer: 'Spaced repetition spreads reviews out [S1].',
+      grounded: true,
+      mode: 'beginner',
+      sources: [
+        { ref: 'S1', lecture_id: 'def0de88-d150-4fda-91d6-95524b960d25', lecture_title: 'Spaced repetition basics', chunk_index: 0, score: 0.75 },
+      ],
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed!.sources[0]).toEqual({
+      ref: 'S1',
+      lectureId: 'def0de88-d150-4fda-91d6-95524b960d25',
+      lectureTitle: 'Spaced repetition basics',
+      chunkIndex: 0,
+      score: 0.75,
+    });
+    // A payload with no answer is unusable, not an empty answer.
+    expect(normalizeAiServiceChatResponse({ grounded: true }) ).toBeNull();
+    expect(normalizeAiServiceChatResponse('nope')).toBeNull();
   });
 
   test('a real provider error is reported instead of a bare timeout', async () => {
