@@ -25,6 +25,34 @@ export function isAiServiceConfigured(): boolean {
 }
 
 /**
+ * Why the configured AI_SERVICE_URL cannot be used, or '' when it looks usable.
+ *
+ * A private-network host (`*.railway.internal`) is only reachable on the port
+ * the target process actually listens on, and nothing defaults it: a URL with
+ * no port silently targets port 80, so every call dies in a few hundred
+ * milliseconds with a connection error that reads like "the AI service is
+ * down" while the service itself is healthy and answering /health publicly.
+ * Naming the problem turns a long debugging session into one line on
+ * /courses/:id/ai-status.
+ */
+export function aiServiceUrlProblem(base: string = aiServiceBaseUrl()): string {
+  if (!base) return 'not-configured';
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    return 'not-a-url';
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'unsupported-protocol';
+  if (url.hostname.endsWith('.railway.internal') && !url.port) return 'private-host-without-port';
+  return '';
+}
+
+export function isAiServiceUrlUsable(base: string = aiServiceBaseUrl()): boolean {
+  return aiServiceUrlProblem(base) === '';
+}
+
+/**
  * Budget for ONE backend→AI-service chat request.
  *
  * A warm AI service answers in ~1-3s and a cold free-tier instance needs
@@ -92,16 +120,21 @@ export function aiServiceHost(): string {
 
 export function aiServiceDiagnostics(): {
   configured: boolean;
+  urlProblem: string;
+  urlUsable: boolean;
   breakerOpen: boolean;
   breakerReason: string;
   chatBudgetMs: number;
   generateBudgetMs: number;
   pingBudgetMs: number;
 } {
+  const problem = aiServiceUrlProblem();
   return {
     configured: isAiServiceConfigured(),
+    // Coarse category only — never the URL itself.
+    urlProblem: problem,
+    urlUsable: problem === '',
     breakerOpen: isAiServiceBreakerOpen(),
-    // Coarse category only — never the URL or token.
     breakerReason: isAiServiceBreakerOpen() ? breakerReason : '',
     chatBudgetMs: aiServiceChatTimeoutMs(),
     generateBudgetMs: aiServiceGenerateTimeoutMs(),
@@ -151,6 +184,14 @@ export interface AiServiceChatResponse {
 export async function pingAiService(timeoutMs = 15000): Promise<boolean> {
   const base = aiServiceBaseUrl();
   if (!base) return false;
+  // Do not spend the budget on a hop that cannot resolve: a private-network
+  // host with no port is a configuration error, and reporting it as an
+  // unreachable service hides the fix.
+  const problem = aiServiceUrlProblem(base);
+  if (problem) {
+    noteAiServiceFailure(`invalid AI_SERVICE_URL (${problem})`);
+    return false;
+  }
   const controller = new AbortController();
   // Cap matches the 60s warmup budget: a cold free-tier AI service needs
   // 30-60s to boot, and capping at 30s made warmup report warm:false even
@@ -195,6 +236,11 @@ export async function callAiServiceChatWithColdRetry(input: {
   // open.
   if (isAiServiceBreakerOpen()) {
     throw new Error('AI service skipped: circuit breaker open after a recent failure');
+  }
+  const problem = aiServiceUrlProblem();
+  if (problem) {
+    noteAiServiceFailure(`invalid AI_SERVICE_URL (${problem})`);
+    throw new Error(`AI service URL is unusable (${problem})`);
   }
   try {
     const result = await callAiServiceChatInner(input);
@@ -253,6 +299,8 @@ export async function callAiServiceGenerate<T>(path: string, body: Record<string
   if (isAiServiceBreakerOpen()) {
     throw new Error('AI service skipped: circuit breaker open after a recent failure');
   }
+  const problem = aiServiceUrlProblem(base);
+  if (problem) throw new Error(`AI service URL is unusable (${problem})`);
   try {
     const res = await withTimeout(
       fetch(`${base.replace(/\/$/, '')}${path}`, {

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -13,6 +15,55 @@ from app.core.logging import get_logger
 
 logger = get_logger("ai-llm")
 
+
+class ProviderNotConfigured(Exception):
+    """A provider was selected but has no credential to authenticate with.
+
+    Raised instead of returning mock text. On the hosted Tutor a missing key
+    used to degrade to `Mock answer: <the user's question>`, which the backend
+    stored and displayed as a grounded answer with citations attached. A
+    configuration failure must be visible, never fabricated.
+    """
+
+
+def looks_like_placeholder(answer: object) -> bool:
+    """True when provider output is really missing-credential mock text.
+
+    Every client used to answer `Mock answer: <question>` without a key, and
+    that text is indistinguishable from a grounded answer once the backend
+    stores it next to citations. The chain treats it as a failed attempt.
+    """
+    if not isinstance(answer, str):
+        return False
+    return bool(re.match(r"^\s*(mock|placeholder|dummy)\b", answer, re.IGNORECASE))
+
+
+def _attempt_timeout(settings, timeout_s: float | None) -> float:
+    """Bound ONE provider attempt by the caller's remaining budget."""
+    budget = float(settings.llm_timeout_s or 30)
+    if timeout_s is not None:
+        budget = min(budget, max(1.0, float(timeout_s)))
+    return max(1.0, budget)
+
+
+def llm_attempt_timeout_s() -> float:
+    """Per-provider attempt budget (LLM_ATTEMPT_TIMEOUT_S, default 20s)."""
+    try:
+        raw = float(os.getenv("LLM_ATTEMPT_TIMEOUT_S", "20"))
+    except ValueError:
+        raw = 20.0
+    return min(max(raw, 2.0), 60.0)
+
+
+def ai_answer_budget_s() -> float:
+    """Total wall-clock budget for the whole provider chain (AI_ANSWER_BUDGET_S)."""
+    try:
+        raw = float(os.getenv("AI_ANSWER_BUDGET_S", "25"))
+    except ValueError:
+        raw = 25.0
+    return min(max(raw, 5.0), 120.0)
+
+
 MODES = ("beginner", "intermediate", "advanced")
 
 GEMINI_GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -21,7 +72,7 @@ GEMINI_GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{
 class LlmClient(Protocol):
     name: str
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str: ...
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str: ...
 
 
 def _gemini_model(settings) -> str:
@@ -41,7 +92,7 @@ def _openrouter_model(settings) -> str:
 class MockLlmClient:
     name: str = "mock"
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
         _ = (system, max_tokens)
         first = user.split("\n")[0][:160]
         return f"Mock answer: {first}"
@@ -59,14 +110,13 @@ class OpenRouterLlmClient:
 
     name: str = "openrouter"
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
         import time
 
         settings = get_settings()
         api_key = (settings.openrouter_api_key or "").strip()
         if not api_key:
-            logger.warning("AI_TUTOR_API_KEY unset — mock output (tests/dev only)")
-            return MockLlmClient().chat(system, user, max_tokens)
+            raise ProviderNotConfigured("AI_TUTOR_API_KEY is required for the openrouter provider")
         model = _openrouter_model(settings)
         payload = {
             "model": model,
@@ -76,7 +126,7 @@ class OpenRouterLlmClient:
                 {"role": "user", "content": user},
             ],
         }
-        timeout = max(1, settings.llm_timeout_s)
+        timeout = _attempt_timeout(settings, timeout_s)
         max_retries = min(max(0, settings.llm_max_retries), 5)
         last_error: Exception | None = None
         url = settings.openrouter_base_url.rstrip("/") + "/chat/completions"
@@ -135,14 +185,13 @@ class GroqLlmClient:
 
     name: str = "groq"
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
         import time
 
         settings = get_settings()
         api_key = (settings.groq_api_key or "").strip()
         if not api_key:
-            logger.warning("GROQ_API_KEY unset — mock output (tests/dev only)")
-            return MockLlmClient().chat(system, user, max_tokens)
+            raise ProviderNotConfigured("GROQ_API_KEY (or AI_TUTOR_API_KEY) is required for the groq provider")
         model = (settings.groq_chat_model or "llama-3.3-70b-versatile").strip()
         payload = {
             "model": model,
@@ -152,7 +201,7 @@ class GroqLlmClient:
                 {"role": "user", "content": user},
             ],
         }
-        timeout = max(1, settings.llm_timeout_s)
+        timeout = _attempt_timeout(settings, timeout_s)
         max_retries = min(max(0, settings.llm_max_retries), 5)
         last_error: Exception | None = None
         url = settings.groq_base_url.rstrip("/") + "/v1/chat/completions"
@@ -213,7 +262,7 @@ class PollinationsLlmClient:
 
     name: str = "pollinations"
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
         import time
 
         settings = get_settings()
@@ -279,20 +328,19 @@ class PollinationsLlmClient:
 class AnthropicLlmClient:
     name: str = "anthropic"
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
         import time
 
         settings = get_settings()
         if not settings.llm_api_key:
-            logger.warning("LLM_API_KEY unset — mock output (tests/dev only)")
-            return MockLlmClient().chat(system, user, max_tokens)
+            raise ProviderNotConfigured("LLM_API_KEY is required for the anthropic provider")
         payload = {
             "model": settings.llm_chat_model,
             "max_tokens": max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
         }
-        timeout = max(1, settings.llm_timeout_s)
+        timeout = _attempt_timeout(settings, timeout_s)
         max_retries = min(max(0, settings.llm_max_retries), 5)
         last_error: Exception | None = None
         for attempt in range(max_retries + 1):
@@ -341,10 +389,7 @@ def set_llm_client(client: LlmClient | None) -> None:
     _override = client
 
 
-def get_llm_client() -> LlmClient:
-    if _override is not None:
-        return _override
-    provider = (get_settings().ai_tutor_provider or get_settings().llm_provider or "").lower()
+def client_for_name(provider: str) -> LlmClient:
     if provider == "mock":
         return MockLlmClient()
     if provider == "pollinations":
@@ -360,28 +405,124 @@ def get_llm_client() -> LlmClient:
     return AnthropicLlmClient()
 
 
+def primary_provider_name() -> str:
+    """AI_TUTOR_PROVIDER is the AI-tutor override; LLM_PROVIDER is the
+    generic fallback used by every other LLM surface."""
+    settings = get_settings()
+    return (settings.ai_tutor_provider or settings.llm_provider or "").strip().lower()
+
+
+# Providers tried after the configured primary. Only providers that can
+# authenticate are included: a missing credential is an honest configuration
+# failure, never silently fabricated text.
+FALLBACK_PROVIDER_ORDER = ("gemini", "openrouter", "pollinations", "groq", "mistral", "anthropic")
+
+
+def provider_has_credential(provider: str) -> bool:
+    settings = get_settings()
+    if provider == "pollinations":
+        return True  # the free route answers without a key (live-verified)
+    if provider == "gemini":
+        return bool((settings.gemini_api_key or "").strip())
+    if provider == "groq":
+        return bool((settings.groq_api_key or "").strip())
+    if provider == "openrouter":
+        return bool((settings.openrouter_api_key or "").strip())
+    if provider == "mistral":
+        return bool((settings.mistral_api_key or "").strip())
+    if provider == "anthropic":
+        return bool((settings.llm_api_key or "").strip())
+    return False
+
+
+def get_llm_client() -> LlmClient:
+    if _override is not None:
+        return _override
+    return client_for_name(primary_provider_name())
+
+
+def get_llm_clients() -> list[LlmClient]:
+    """Ordered provider chain: the configured primary first, then every other
+    provider that holds a credential.
+
+    Same reasoning as the backend's chain: one hanging or rate-limited provider
+    must degrade to the next instead of failing the Tutor. Unkeyed providers are
+    skipped (never mocked) so every answer returned here is genuine.
+    """
+    if _override is not None:
+        return [_override]
+    primary = primary_provider_name()
+    if primary == "mock":
+        return [MockLlmClient()]
+    names = [primary, *(n for n in FALLBACK_PROVIDER_ORDER if n != primary)]
+    chain = [client_for_name(name) for name in names if name and provider_has_credential(name)]
+    # Nothing is configured: return the primary so the caller receives the
+    # honest ProviderNotConfigured error instead of an empty answer.
+    return chain or [client_for_name(primary)]
+
+
+def chat_with_fallback(system: str, user: str, max_tokens: int = 1024) -> tuple[str, str]:
+    """Answer with the first provider in the chain that succeeds.
+
+    Returns (answer, provider_name). Each attempt is bounded by
+    LLM_ATTEMPT_TIMEOUT_S and the whole chain by AI_ANSWER_BUDGET_S, so a
+    hanging provider can never hold the request open. A missing credential is
+    reported as ProviderNotConfigured; a real provider failure keeps its own
+    error so /v1/chat/answer can map it to a safe category.
+    """
+    import time
+
+    chain = get_llm_clients()
+    deadline = time.monotonic() + ai_answer_budget_s()
+    attempt_timeout = llm_attempt_timeout_s()
+    errors: list[Exception] = []
+    for client in chain:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            answer = client.chat(system, user, max_tokens, timeout_s=min(attempt_timeout, remaining))
+        except Exception as exc:  # provider failure, or no credential
+            errors.append(exc)
+            logger.warning("llm provider failed provider=%s err=%s", client.name, type(exc).__name__)
+            continue
+        if isinstance(answer, str) and answer.strip():
+            # Explicit mock mode (tests/dev) is the only place placeholder text
+            # is legitimate; a real provider answering with it means its
+            # credential is missing, which must not reach a student.
+            if client.name == "mock" or not looks_like_placeholder(answer):
+                return answer, client.name
+        errors.append(Exception(f"{client.name} returned an empty or placeholder answer"))
+    config_errors = [e for e in errors if isinstance(e, ProviderNotConfigured)]
+    other_errors = [e for e in errors if not isinstance(e, ProviderNotConfigured)]
+    if other_errors:
+        raise other_errors[-1]
+    if config_errors:
+        raise config_errors[0]
+    raise ProviderNotConfigured("no chat provider is configured")
+
+
 @dataclass
 class GeminiLlmClient:
     """Free-tier runtime provider (Google Gemini). Same interface/discipline."""
 
     name: str = "gemini"
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
         import time
         import urllib.parse
 
         settings = get_settings()
         api_key = (settings.gemini_api_key or "").strip()
         if not api_key:
-            logger.warning("GEMINI_API_KEY unset — mock output (tests/dev only)")
-            return MockLlmClient().chat(system, user, max_tokens)
+            raise ProviderNotConfigured("GEMINI_API_KEY is required for the gemini provider")
         model = _gemini_model(settings)
         payload = {
             "system_instruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
             "generationConfig": {"maxOutputTokens": max_tokens},
         }
-        timeout = max(1, settings.llm_timeout_s)
+        timeout = _attempt_timeout(settings, timeout_s)
         max_retries = min(max(0, settings.llm_max_retries), 5)
         last_error: Exception | None = None
         url = GEMINI_GENERATE_URL.format(model=urllib.parse.quote(model, safe=""))
@@ -436,14 +577,13 @@ class MistralLlmClient:
 
     name: str = "mistral"
 
-    def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+    def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
         import time
 
         settings = get_settings()
         api_key = (settings.mistral_api_key or "").strip()
         if not api_key:
-            logger.warning("AI_TUTOR_API_KEY unset — mock output (tests/dev only)")
-            return MockLlmClient().chat(system, user, max_tokens)
+            raise ProviderNotConfigured("AI_TUTOR_API_KEY is required for the mistral provider")
         model = (settings.mistral_chat_model or "magistral-small-2506").strip()
         payload = {
             "model": model,
@@ -453,7 +593,7 @@ class MistralLlmClient:
                 {"role": "user", "content": user},
             ],
         }
-        timeout = max(1, settings.llm_timeout_s)
+        timeout = _attempt_timeout(settings, timeout_s)
         max_retries = min(max(0, settings.llm_max_retries), 5)
         last_error: Exception | None = None
         url = settings.mistral_base_url.rstrip("/") + "/v1/chat/completions"

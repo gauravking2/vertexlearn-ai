@@ -576,10 +576,20 @@ export async function chatWithFallback(input: ChatCompletionInput): Promise<LlmF
         timeoutMs: Math.min(attemptTimeoutMs, remaining),
         maxRetries: 0,
       });
-      if (answer && answer.trim()) {
+      if (answer && answer.trim() && !looksLikePlaceholderAnswer(answer)) {
         return { answer, provider: provider.name, attempts };
       }
-      attempts.push({ provider: provider.name, category: 'empty' });
+      if (looksLikePlaceholderAnswer(answer)) {
+        // Missing-credential mock text: a configuration failure, not an answer.
+        attempts.push({ provider: provider.name, category: 'placeholder' });
+        errors.push({
+          provider: provider.name,
+          category: 'placeholder',
+          error: new Error(`LLM provider '${provider.name}' is not configured (missing credential) — placeholder answer refused`),
+        });
+      } else {
+        attempts.push({ provider: provider.name, category: 'empty' });
+      }
     } catch (err) {
       const category = categorizeLlmError(err);
       attempts.push({ provider: provider.name, category });
@@ -711,4 +721,19 @@ export function buildGroundedUserPrompt(question: string, sources: { ref: string
 
 export function stripForeignCitations(answer: string, allowedRefs: Set<string>): string {
   return answer.replace(/\[S(\d+)\]/g, (m) => (allowedRefs.has(m) ? m : '[S?]'));
+}
+
+/**
+ * Placeholder detection for provider output.
+ *
+ * Every HTTP provider falls back to `MockLlmProvider` text when its credential
+ * is missing, and the AI service did the same (`Mock answer: <question>`).
+ * Returned to a student that text is indistinguishable from a real grounded
+ * answer — it carries no course facts while the UI still renders citations
+ * next to it. Placeholder text is a configuration failure, so the Tutor must
+ * treat it as a failed attempt and fall through, never store it.
+ */
+export function looksLikePlaceholderAnswer(answer: unknown): boolean {
+  if (typeof answer !== 'string') return false;
+  return /^\s*(mock|placeholder|dummy)\b/i.test(answer) || /^\s*\[?mock answer/i.test(answer);
 }

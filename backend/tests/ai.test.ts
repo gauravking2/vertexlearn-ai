@@ -73,6 +73,52 @@ describe('AI tutor + RAG', () => {
     expect(msg.body.sources.length).toBeGreaterThan(0);
   });
 
+  test('placeholder answer from the AI service is never surfaced or persisted', async () => {
+    const s = await setupCourseWithTranscript(
+      'placeholder1',
+      'Osmosis moves water across a semipermeable membrane from low to high solute concentration.',
+    );
+    const prevUrl = process.env.AI_SERVICE_URL;
+    const prevToken = process.env.AI_SERVICE_TOKEN;
+    const realFetch = global.fetch;
+    // A reachable AI service that answers with mock text — the exact
+    // production failure that previously stored a citation-carrying
+    // "answer" containing none of the course material.
+    process.env.AI_SERVICE_URL = 'http://127.0.0.1:59999';
+    process.env.AI_SERVICE_TOKEN = 'test-token';
+    global.fetch = (async () =>
+      new Response(JSON.stringify({ answer: 'Mock answer: I am the AI service', grounded: true, sources: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof global.fetch;
+    try {
+      const session = await request(app)
+        .post('/api/v1/ai/chat/sessions')
+        .set('Authorization', `Bearer ${s.studentToken}`)
+        .send({ courseId: s.courseId });
+      const msg = await request(app)
+        .post(`/api/v1/ai/chat/sessions/${session.body.id}/messages`)
+        .set('Authorization', `Bearer ${s.studentToken}`)
+        .send({ content: 'How does osmosis move water?' });
+      expect(msg.status).toBe(201);
+      expect(msg.body.provider).toMatch(/^local-rag/);
+      expect(msg.body.answer).not.toMatch(/mock answer|placeholder/i);
+      expect(msg.body.grounded).toBe(true);
+      expect(msg.body.answer).toContain('[S1]');
+      const { db } = await import('../src/db/pool');
+      const stored = await db.query(`SELECT content FROM ai_chat_messages WHERE session_id = $1 AND role = 'assistant'`, [session.body.id]);
+      for (const row of stored.rows as { content: string }[]) {
+        expect(row.content).not.toMatch(/mock answer|placeholder/i);
+      }
+    } finally {
+      global.fetch = realFetch;
+      if (prevUrl === undefined) delete process.env.AI_SERVICE_URL;
+      else process.env.AI_SERVICE_URL = prevUrl;
+      if (prevToken === undefined) delete process.env.AI_SERVICE_TOKEN;
+      else process.env.AI_SERVICE_TOKEN = prevToken;
+    }
+  });
+
   test('course isolation: Course A chat cannot retrieve Course B chunks', async () => {
     const a = await setupCourseWithTranscript('isoA', 'Alpha course teaches photosynthesis and chloroplasts in depth.');
     const b = await setupCourseWithTranscript('isoB', 'Beta course teaches quantum tunneling in semiconductors.');

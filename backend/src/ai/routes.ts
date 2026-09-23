@@ -10,6 +10,7 @@ import { touchStreak } from '../learning/progress';
 import {
   aiServiceDiagnostics,
   aiServiceHost,
+  aiServiceUrlProblem,
   callAiServiceChat,
   callAiServiceGenerate,
   isAiServiceBreakerOpen,
@@ -25,6 +26,7 @@ import {
   getLlmProvider,
   getLlmProviderName,
   getProviderChain,
+  looksLikePlaceholderAnswer,
   stripForeignCitations,
   type ExplanationMode,
 } from './llm';
@@ -235,7 +237,16 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
       const remoteStarted = Date.now();
       try {
         const remote = await callAiServiceChat({ courseId: session.course_id, question: body.content, mode: session.mode, topK });
-        if (remote && typeof remote.answer === 'string' && remote.answer.trim()) {
+        if (remote && typeof remote.answer === 'string' && looksLikePlaceholderAnswer(remote.answer)) {
+          // The AI service answered with mock text (no provider credential on
+          // its side). Storing that would show a student a citation-carrying
+          // "answer" containing none of the course material, so treat it as a
+          // failed attempt and answer from the local grounded path instead.
+          logger.warn(
+            { courseId: session.course_id, latencyMs: Date.now() - remoteStarted },
+            'AI service returned placeholder text — falling back to local RAG path',
+          );
+        } else if (remote && typeof remote.answer === 'string' && remote.answer.trim()) {
           const remoteRefs = new Set((remote.sources ?? []).map((s) => s.ref));
           answer = stripForeignCitations(remote.answer, new Set([...localAllowedRefs, ...remoteRefs]));
           grounded = remote.grounded;
@@ -273,8 +284,9 @@ aiRouter.post('/ai/chat/sessions/:id/messages', authenticate, validateBody(messa
             provider: 'ai-service',
           });
           return;
+        } else if (!remote || typeof remote.answer !== 'string' || !remote.answer.trim()) {
+          logger.warn({ courseId: session.course_id, latencyMs: Date.now() - remoteStarted }, 'AI service empty answer — falling back to local RAG path');
         }
-        logger.warn({ courseId: session.course_id, latencyMs: Date.now() - remoteStarted }, 'AI service empty answer — falling back to local RAG path');
       } catch (err) {
         // Fail over to the local RAG path below for transport/provider
         // errors; only fail closed when the local path cannot answer either.
@@ -851,6 +863,7 @@ aiRouter.get('/courses/:id/ai-status', authenticate, authorize('instructor', 'ad
       embeddingDim: provider.dim,
       aiServiceConfigured: isAiServiceConfigured(),
       aiServiceHost: aiServiceHost(),
+      aiServiceUrlProblem: aiServiceUrlProblem(),
       aiServiceReachable,
       aiService: aiServiceDiagnostics(),
       chatProvider: getLlmProviderName(),

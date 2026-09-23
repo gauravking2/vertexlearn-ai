@@ -70,12 +70,20 @@ def test_openrouter_chat_request_shape_and_parsing(monkeypatch):
     assert "authorization" in header_names
 
 
-def test_openrouter_missing_key_is_deterministic_mock(monkeypatch):
+def test_openrouter_missing_key_raises_instead_of_mocking(monkeypatch):
+    """A missing credential is a configuration failure, not an answer.
+
+    Regression: the hosted AI service returned `Mock answer: <question>` when
+    its provider had no key, and the backend stored that as a grounded answer
+    with citations attached.
+    """
+    from app.core.llm import ProviderNotConfigured
+
     monkeypatch.setenv("AI_TUTOR_PROVIDER", "openrouter")
     monkeypatch.delenv("AI_TUTOR_API_KEY", raising=False)
     reset_settings()
-    out = OpenRouterLlmClient().chat("sys", "first line", 64)
-    assert "Mock answer" in out
+    with pytest.raises(ProviderNotConfigured):
+        OpenRouterLlmClient().chat("sys", "first line", 64)
 
 
 def test_openrouter_error_mapping(monkeypatch):

@@ -10,6 +10,22 @@ import json
 from typing import Protocol
 from urllib.parse import parse_qs, unquote, urlparse
 
+from app.core.logging import get_logger
+
+logger = get_logger("ai-store")
+
+
+class DatabaseUnavailable(Exception):
+    """The course index could not be read.
+
+    Raised instead of letting a raw psycopg2 error escape as an uncategorised
+    500. On the hosted Tutor this is exactly how a wrong DATABASE_URL presented
+    itself: `relation "document_chunks" does not exist` reached the client as
+    `INTERNAL_ERROR` with no way to tell a schema/DB mismatch from a provider
+    outage. The libpq detail is logged server-side only (it can name a host),
+    and callers map this to a bounded, user-safe failure.
+    """
+
 
 class ChunkStore(Protocol):
     def chunks_for_course(self, course_id: str) -> list[dict]: ...
@@ -108,22 +124,30 @@ class PostgresChunkStore:
             # "server does not support SSL" can never break local dev.
             if host.lower() not in ("localhost", "127.0.0.1", "::1", "postgres", "db", "host.docker.internal"):
                 params["sslmode"] = "require"
-        return psycopg2.connect(**params)
+        try:
+            return psycopg2.connect(**params)
+        except Exception as exc:
+            logger.error("chunk store connect failed err=%s", type(exc).__name__)
+            raise DatabaseUnavailable("course index is unreachable") from exc
 
     def chunks_for_course(self, course_id: str) -> list[dict]:
         conn = self._connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT dc.id, dc.course_id, dc.lecture_id, COALESCE(l.title, 'Lecture'),
-                           dc.chunk_index, dc.chunk_text, dc.embedding::text
-                    FROM document_chunks dc LEFT JOIN lectures l ON l.id = dc.lecture_id
-                    WHERE dc.course_id = %s LIMIT 500
-                    """,
-                    (course_id,),
-                )
-                rows = cur.fetchall()
+                try:
+                    cur.execute(
+                        """
+                        SELECT dc.id, dc.course_id, dc.lecture_id, COALESCE(l.title, 'Lecture'),
+                               dc.chunk_index, dc.chunk_text, dc.embedding::text
+                        FROM document_chunks dc LEFT JOIN lectures l ON l.id = dc.lecture_id
+                        WHERE dc.course_id = %s LIMIT 500
+                        """,
+                        (course_id,),
+                    )
+                    rows = cur.fetchall()
+                except Exception as exc:
+                    logger.error("chunk store query failed table=document_chunks err=%s", type(exc).__name__)
+                    raise DatabaseUnavailable("course index query failed") from exc
         finally:
             conn.close()
         return [
@@ -143,15 +167,19 @@ class PostgresChunkStore:
         conn = self._connect()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT dc.chunk_text FROM document_chunks dc
-                    JOIN lectures l ON l.id = dc.lecture_id
-                    WHERE l.module_id = %s LIMIT %s
-                    """,
-                    (module_id, limit),
-                )
-                rows = cur.fetchall()
+                try:
+                    cur.execute(
+                        """
+                        SELECT dc.chunk_text FROM document_chunks dc
+                        JOIN lectures l ON l.id = dc.lecture_id
+                        WHERE l.module_id = %s LIMIT %s
+                        """,
+                        (module_id, limit),
+                    )
+                    rows = cur.fetchall()
+                except Exception as exc:
+                    logger.error("chunk store query failed table=lectures err=%s", type(exc).__name__)
+                    raise DatabaseUnavailable("course index query failed") from exc
         finally:
             conn.close()
         return [r[0] for r in rows]

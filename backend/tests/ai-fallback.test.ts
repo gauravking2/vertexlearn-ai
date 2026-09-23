@@ -98,6 +98,11 @@ describe('AI Tutor provider fallback chain', () => {
   test('a failed hop is parked and a success clears it', async () => {
     noteAiServiceSuccess();
     noteAiServiceFailure('health request failed (network/timeout)');
+    // Deterministic: every provider transport fails, so this must reject
+    // without depending on the real internet being reachable (or not).
+    global.fetch = (async () => {
+      throw new Error('network down');
+    }) as unknown as typeof global.fetch;
     await expect(chatWithFallback({ system: 's', user: 'u' })).rejects.toThrow();
     noteAiServiceSuccess();
   });

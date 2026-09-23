@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.llm import get_llm_clients, primary_provider_name
 from app.core.logging import SERVICE, get_logger, request_id_var
 from app.routers import chat, flashcards, quiz_gen, study_plan, summarize
 
@@ -44,7 +45,16 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "service": SERVICE, "provider": settings.llm_provider}
+        # Report the provider that actually answers chat, plus the ordered
+        # chain. The previous payload echoed LLM_PROVIDER only, so the hosted
+        # deployment reported "gemini" as healthy while AI_TUTOR_PROVIDER sent
+        # every chat to an unkeyed provider that answered with mock text.
+        return {
+            "status": "ok",
+            "service": SERVICE,
+            "provider": primary_provider_name(),
+            "chatChain": [client.name for client in get_llm_clients()],
+        }
 
     @app.get("/ready")
     async def ready():

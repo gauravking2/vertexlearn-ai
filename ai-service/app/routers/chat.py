@@ -6,12 +6,12 @@ import time
 from fastapi import APIRouter, Header
 
 from app.core.errors import ApiError, forbidden
-from app.core.llm import get_llm_client, grounded_system_prompt
+from app.core.llm import ProviderNotConfigured, chat_with_fallback, grounded_system_prompt
 from app.core.logging import get_logger
 from app.models.schemas import ChatAnswerRequest, ChatAnswerResponse, EmbedRequest, EmbedResponse, InternalChatRequest, Source
 from app.rag.embeddings import get_embedding_client
 from app.rag.retriever import StoredChunk, assert_no_cross_course, has_support, parse_embedding, retrieve_course_chunks
-from app.store import get_store
+from app.store import DatabaseUnavailable, get_store
 
 router = APIRouter()
 NO_CONTEXT = "I could not find this in the course material."
@@ -30,6 +30,10 @@ def _llm_provider_api_error(exc: Exception) -> ApiError:
     Never leaks provider bodies, headers, URLs, or key material — the backend
     only receives the status/code and shows its own user-safe message.
     """
+    # A missing credential is a configuration failure, not a transient outage:
+    # it must be reported (and fixed), never masked by fabricated text.
+    if isinstance(exc, ProviderNotConfigured):
+        return ApiError(503, "AI_NOT_CONFIGURED", "AI Tutor configuration is invalid.")
     text = str(exc)
     match = re.search(r"LLM provider error: (\d{3})", text)
     status = int(match.group(1)) if match else None
@@ -51,7 +55,13 @@ async def chat_answer(body: ChatAnswerRequest, x_ai_service_token: str | None = 
 
     _check_token(x_ai_service_token, get_settings().ai_service_token)
     store = get_store()
-    rows = store.chunks_for_course(body.course_id)
+    try:
+        rows = store.chunks_for_course(body.course_id)
+    except DatabaseUnavailable as exc:
+        # The course index is unreadable (wrong database, missing schema, or a
+        # dead Postgres). Report a bounded category instead of an opaque 500.
+        logger.error("chunk store unavailable course_id=%s err=%s", body.course_id, type(exc).__name__)
+        raise ApiError(503, "AI_DB_UNAVAILABLE", "AI Tutor could not read the course index.") from exc
     stored = [
         StoredChunk(
             id=r["id"],
@@ -81,15 +91,26 @@ async def chat_answer(body: ChatAnswerRequest, x_ai_service_token: str | None = 
     # (answer ONLY from <context>, say so when unsupported) is the guardrail.
     grounded_flag = has_support(results)
     context = "\n\n".join(f"[S{i+1}] ({r.chunk.lecture_title}) {r.chunk.text}" for i, r in enumerate(results))
-    llm = get_llm_client()
     started = time.monotonic()
     try:
-        answer = llm.chat(grounded_system_prompt(body.mode), f"Question: {body.question}\n\n<context>\n{context}\n</context>")
+        # Bounded provider chain: the first credentialed provider that answers
+        # wins, so one rate-limited or hanging provider cannot take the Tutor
+        # down. Every attempt is time-capped (see app.core.llm).
+        answer, provider = chat_with_fallback(
+            grounded_system_prompt(body.mode), f"Question: {body.question}\n\n<context>\n{context}\n</context>"
+        )
     except Exception as exc:
         logger.error("llm chat failed course_id=%s err=%s", body.course_id, type(exc).__name__)
         raise _llm_provider_api_error(exc) from exc
     latency_ms = int((time.monotonic() - started) * 1000)
-    logger.info("chat answered course_id=%s grounded=%s sources=%d latency_ms=%d", body.course_id, grounded_flag, len(sources), latency_ms)
+    logger.info(
+        "chat answered course_id=%s grounded=%s sources=%d provider=%s latency_ms=%d",
+        body.course_id,
+        grounded_flag,
+        len(sources),
+        provider,
+        latency_ms,
+    )
     return ChatAnswerResponse(answer=answer, grounded=grounded_flag, sources=sources, mode=body.mode)
 
 
@@ -108,10 +129,9 @@ async def internal_chat(body: InternalChatRequest, x_ai_service_token: str | Non
     from app.core.config import get_settings
 
     _check_token(x_ai_service_token, get_settings().ai_service_token)
-    llm = get_llm_client()
     try:
-        answer = llm.chat(body.system, body.user, body.maxTokens)
+        answer, provider = chat_with_fallback(body.system, body.user, body.maxTokens)
     except Exception as exc:
         logger.error("internal llm chat failed err=%s", type(exc).__name__)
         raise _llm_provider_api_error(exc) from exc
-    return {"answer": answer, "grounded": True}
+    return {"answer": answer, "grounded": True, "provider": provider}

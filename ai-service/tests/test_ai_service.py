@@ -153,7 +153,7 @@ def test_chat_endpoint_low_support_still_calls_provider():
         def __init__(self):
             self.calls = 0
 
-        def chat(self, system: str, user: str, max_tokens: int = 1024) -> str:
+        def chat(self, system: str, user: str, max_tokens: int = 1024, timeout_s: float | None = None) -> str:
             self.calls += 1
             return "Stubbed grounded answer [S1]."
 
@@ -411,8 +411,10 @@ def test_groq_llm_uses_openai_compatible_endpoint(monkeypatch):
     assert sent["body"]["model"] == "llama-3.3-70b-versatile"
 
 
-def test_groq_routing_and_no_key_mock(monkeypatch):
-    """AI_TUTOR_PROVIDER=groq routes to Groq; missing key falls back to mock."""
+def test_groq_routing_and_missing_key_raises(monkeypatch):
+    """AI_TUTOR_PROVIDER=groq routes to Groq; a missing key is an honest
+    configuration error, never fabricated mock text (live bug: the hosted AI
+    service answered `Mock answer: <question>` with no credential configured)."""
     import json
     import urllib.request
 
@@ -448,13 +450,15 @@ def test_groq_routing_and_no_key_mock(monkeypatch):
     except Exception as exc:
         assert "401" in str(exc)
 
-    # Missing key never touches HTTP.
+    # Missing key never touches HTTP and never invents an answer.
+    from app.core.llm import ProviderNotConfigured
+
     monkeypatch.delenv("GROQ_API_KEY")
     reset_settings()
     calls: list = []
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: calls.append(1) or _FakeRes())
-    out = get_llm_client().chat("sys", "hello world", 64)
-    assert "Mock answer" in out
+    with pytest.raises(ProviderNotConfigured):
+        get_llm_client().chat("sys", "hello world", 64)
     assert calls == []
 
 
